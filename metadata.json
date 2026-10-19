@@ -1,0 +1,6 @@
+{
+  "name": "لُغتي تحكي... وأنا أصنع الحكاية",
+  "description": "تطبيق تفاعلي لمادة لغتي للصف الأول المتوسط يتضمن دروساً وألعاباً لغوية واختبارات تدريبية وتحدي نافس.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

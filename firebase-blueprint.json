@@ -1,0 +1,283 @@
+{
+  "entities": {
+    "StudentProfileDoc": {
+      "title": "StudentProfileDoc",
+      "description": "Stores student profile, progress, points, badges, daily challenge lock state, and Nafes stages completed.",
+      "type": "object",
+      "properties": {
+        "profileId": {
+          "type": "string",
+          "description": "Unique student identifier (name_code)",
+          "minLength": 2,
+          "maxLength": 100,
+          "pattern": "^[a-zA-Z0-9_\\-\\u0600-\\u06FF\\s]+$"
+        },
+        "name": {
+          "type": "string",
+          "description": "Student full name in Arabic",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "code": {
+          "type": "string",
+          "description": "4-digit student pin code",
+          "minLength": 4,
+          "maxLength": 4,
+          "pattern": "^[0-9]{4}$"
+        },
+        "cls": {
+          "type": "string",
+          "description": "Classroom section (أ, ب, ج)",
+          "minLength": 1,
+          "maxLength": 10
+        },
+        "points": {
+          "type": "number",
+          "description": "Total points earned by student"
+        },
+        "badges": {
+          "type": "array",
+          "description": "List of earned badge names (bounded up to 20)"
+        },
+        "correct": {
+          "type": "number",
+          "description": "Total correct answers across quizzes"
+        },
+        "attempts": {
+          "type": "number",
+          "description": "Total quiz attempts"
+        },
+        "progress": {
+          "type": "number",
+          "description": "Overall journey progress percentage (0-100)"
+        },
+        "completed": {
+          "type": "array",
+          "description": "Titles of completed lessons and exams (bounded up to 50)"
+        },
+        "nafesStageIndex": {
+          "type": "number",
+          "description": "Index of current Nafes renewable exam stage (0 = Unit 1, 1 = Unit 2, 2 = Unit 3, 3+ = Renewable stages)"
+        },
+        "dailyCurrentIndex": {
+          "type": "number",
+          "description": "Index of current unlocked daily challenge question"
+        },
+        "dailyNextUnlockMs": {
+          "type": "number",
+          "description": "Timestamp in ms when the next daily challenge unlocks (strictly 24h after solving previous)"
+        },
+        "lastQuizTitle": {
+          "type": "string",
+          "description": "Title of last completed exam",
+          "maxLength": 120
+        },
+        "lastQuizScore": {
+          "type": "number",
+          "description": "Score in last completed exam"
+        },
+        "lastQuizTotal": {
+          "type": "number",
+          "description": "Total questions in last completed exam"
+        },
+        "isBlocked": {
+          "type": "boolean",
+          "description": "Whether student profile is paused/restricted by admin"
+        },
+        "updatedAt": {
+          "type": "number",
+          "description": "Client/server epoch ms of last update"
+        }
+      },
+      "required": [
+        "profileId",
+        "name",
+        "code",
+        "cls",
+        "points",
+        "correct",
+        "attempts",
+        "progress",
+        "nafesStageIndex",
+        "dailyCurrentIndex",
+        "dailyNextUnlockMs",
+        "updatedAt"
+      ]
+    },
+    "CustomChallengeDoc": {
+      "title": "CustomChallengeDoc",
+      "description": "Custom daily challenge question added or edited by the teacher/admin.",
+      "type": "object",
+      "properties": {
+        "day": {
+          "type": "number",
+          "description": "Day number in the progression"
+        },
+        "level": {
+          "type": "string",
+          "description": "Difficulty level label",
+          "minLength": 2,
+          "maxLength": 40
+        },
+        "points": {
+          "type": "number",
+          "description": "Points awarded for solving"
+        },
+        "unitTopic": {
+          "type": "string",
+          "description": "Unit and grammar rule topic",
+          "minLength": 2,
+          "maxLength": 120
+        },
+        "question": {
+          "type": "string",
+          "description": "Question prompt",
+          "minLength": 4,
+          "maxLength": 500
+        },
+        "options": {
+          "type": "array",
+          "description": "4 multiple choice options"
+        },
+        "answer": {
+          "type": "number",
+          "description": "Correct option index (0-3)"
+        },
+        "explanation": {
+          "type": "string",
+          "description": "Grammar explanation",
+          "minLength": 2,
+          "maxLength": 500
+        },
+        "authorEmail": {
+          "type": "string",
+          "description": "Admin email who created it",
+          "maxLength": 120
+        },
+        "createdAt": {
+          "type": "number",
+          "description": "Creation timestamp ms"
+        }
+      },
+      "required": [
+        "day",
+        "level",
+        "points",
+        "unitTopic",
+        "question",
+        "options",
+        "answer",
+        "explanation",
+        "authorEmail",
+        "createdAt"
+      ]
+    },
+    "AppSettingsDoc": {
+      "title": "AppSettingsDoc",
+      "description": "Global application settings, announcements, and feature permissions controlled by the teacher/admin.",
+      "type": "object",
+      "properties": {
+        "announcement": {
+          "type": "string",
+          "description": "Announcement banner message from teacher to students",
+          "maxLength": 400
+        },
+        "enforce24hChallengeLock": {
+          "type": "boolean",
+          "description": "When true, next daily challenge only opens 24h after solving the current one"
+        },
+        "enableGames": {
+          "type": "boolean",
+          "description": "Permission toggle to enable or disable language games"
+        },
+        "enableNafes": {
+          "type": "boolean",
+          "description": "Permission toggle to enable or disable Nafes exams"
+        },
+        "enableFeedback": {
+          "type": "boolean",
+          "description": "Permission toggle to enable or disable parent feedback"
+        },
+        "adminPin": {
+          "type": "string",
+          "description": "Teacher quick access PIN",
+          "minLength": 4,
+          "maxLength": 12
+        },
+        "updatedAt": {
+          "type": "number",
+          "description": "Timestamp ms of last config update"
+        }
+      },
+      "required": [
+        "announcement",
+        "enforce24hChallengeLock",
+        "enableGames",
+        "enableNafes",
+        "enableFeedback",
+        "adminPin",
+        "updatedAt"
+      ]
+    },
+    "FeedbackDoc": {
+      "title": "FeedbackDoc",
+      "description": "Parent or student feedback item stored in Firestore with moderation status.",
+      "type": "object",
+      "properties": {
+        "role": {
+          "type": "string",
+          "description": "Sender role (ولي أمر طالب / ولي أمر طالبة)",
+          "minLength": 2,
+          "maxLength": 50
+        },
+        "cls": {
+          "type": "string",
+          "description": "Classroom section",
+          "minLength": 1,
+          "maxLength": 30
+        },
+        "text": {
+          "type": "string",
+          "description": "Feedback content",
+          "minLength": 2,
+          "maxLength": 500
+        },
+        "status": {
+          "type": "string",
+          "description": "Moderation status (قيد المراجعة / معتمد ومنشور)",
+          "minLength": 2,
+          "maxLength": 40
+        },
+        "createdAt": {
+          "type": "number",
+          "description": "Timestamp ms"
+        }
+      },
+      "required": [
+        "role",
+        "cls",
+        "text",
+        "status",
+        "createdAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/students/{studentId}": {
+      "schema": { "$ref": "#/entities/StudentProfileDoc" },
+      "description": "Student progress, points, horse race leaderboard ranking, 24h daily challenge lock, and Nafes stage."
+    },
+    "/custom_challenges/{challengeId}": {
+      "schema": { "$ref": "#/entities/CustomChallengeDoc" },
+      "description": "Teacher-added custom daily challenges."
+    },
+    "/app_settings/{settingId}": {
+      "schema": { "$ref": "#/entities/AppSettingsDoc" },
+      "description": "Global application settings and permissions controlled by the teacher."
+    },
+    "/feedback/{feedbackId}": {
+      "schema": { "$ref": "#/entities/FeedbackDoc" },
+      "description": "Parent suggestions and feedback with admin approval."
+    }
+  }
+}

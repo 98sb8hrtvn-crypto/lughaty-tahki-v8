@@ -1,0 +1,184 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() &&
+        request.auth.token.email == "msa3dals5ary@gmail.com" &&
+        request.auth.token.email_verified == true;
+    }
+
+    function isValidStudent(data) {
+      return data.keys().hasAll([
+          'profileId', 'name', 'code', 'cls', 'points',
+          'correct', 'attempts', 'progress', 'nafesStageIndex',
+          'dailyCurrentIndex', 'dailyNextUnlockMs', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'docId', 'profileId', 'name', 'code', 'cls', 'points', 'badges',
+          'correct', 'attempts', 'progress', 'completed', 'nafesStageIndex',
+          'dailyCurrentIndex', 'dailyNextUnlockMs', 'lastQuizTitle',
+          'lastQuizScore', 'lastQuizTotal', 'isBlocked', 'raceCompletedAt', 'finishLineReached', 'updatedAt'
+        ]) &&
+        data.profileId is string && data.profileId.size() >= 2 && data.profileId.size() <= 100 &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 80 &&
+        data.code is string && data.code.size() == 4 && data.code.matches('^[0-9]{4}$') &&
+        data.cls is string && data.cls.size() >= 1 && data.cls.size() <= 10 &&
+        data.points is number && data.points >= 0 && data.points <= 1000000 &&
+        data.correct is number && data.correct >= 0 && data.correct <= 100000 &&
+        data.attempts is number && data.attempts >= 0 && data.attempts <= 100000 &&
+        data.progress is number && data.progress >= 0 && data.progress <= 100 &&
+        data.nafesStageIndex is number && data.nafesStageIndex >= 0 && data.nafesStageIndex <= 100 &&
+        data.dailyCurrentIndex is number && data.dailyCurrentIndex >= 0 && data.dailyCurrentIndex <= 500 &&
+        data.dailyNextUnlockMs is number && data.dailyNextUnlockMs >= 0 &&
+        data.updatedAt is number && data.updatedAt >= 0 &&
+        (!('docId' in data) || (data.docId is string && data.docId.size() <= 128)) &&
+        (!('badges' in data) || (data.badges is list && data.badges.size() <= 40)) &&
+        (!('completed' in data) || (data.completed is list && data.completed.size() <= 50)) &&
+        (!('lastQuizTitle' in data) || (data.lastQuizTitle is string && data.lastQuizTitle.size() <= 120)) &&
+        (!('lastQuizScore' in data) || (data.lastQuizScore is number && data.lastQuizScore >= 0)) &&
+        (!('lastQuizTotal' in data) || (data.lastQuizTotal is number && data.lastQuizTotal >= 0)) &&
+        (!('isBlocked' in data) || (data.isBlocked is bool)) &&
+        (!('raceCompletedAt' in data) || (data.raceCompletedAt is number)) &&
+        (!('finishLineReached' in data) || (data.finishLineReached is bool));
+    }
+
+    function isValidChallenge(data) {
+      return data.keys().hasAll([
+          'day', 'level', 'points', 'unitTopic', 'question',
+          'options', 'answer', 'explanation', 'authorEmail', 'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'day', 'level', 'points', 'unitTopic', 'question',
+          'options', 'answer', 'explanation', 'authorEmail', 'createdAt'
+        ]) &&
+        data.day is number && data.day >= 1 && data.day <= 365 &&
+        data.level is string && data.level.size() >= 2 && data.level.size() <= 40 &&
+        data.points is number && data.points >= 1 && data.points <= 500 &&
+        data.unitTopic is string && data.unitTopic.size() >= 2 && data.unitTopic.size() <= 120 &&
+        data.question is string && data.question.size() >= 4 && data.question.size() <= 500 &&
+        data.options is list && data.options.size() == 4 && data.options[0] is string && data.options[0].size() <= 250 &&
+        data.answer is number && data.answer >= 0 && data.answer <= 3 &&
+        data.explanation is string && data.explanation.size() >= 2 && data.explanation.size() <= 500 &&
+        data.authorEmail is string && data.authorEmail.size() <= 120 &&
+        data.createdAt is number && data.createdAt >= 0;
+    }
+
+    function isValidSettings(data) {
+      return data.keys().hasAll([
+          'announcement', 'enforce24hChallengeLock', 'enableGames',
+          'enableNafes', 'enableFeedback', 'adminPin', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'announcement', 'enforce24hChallengeLock', 'enableGames',
+          'enableNafes', 'enableFeedback', 'adminPin', 'updatedAt',
+          'orderUnlockAll', 'orderUnit1Open', 'orderUnit2Open', 'orderUnit3Open',
+          'unit1Open', 'unit2Open', 'unit3Open', 'tickerCustomText', 'tickerAnnouncements'
+        ]) &&
+        data.announcement is string && data.announcement.size() <= 400 &&
+        data.enforce24hChallengeLock is bool &&
+        data.enableGames is bool &&
+        data.enableNafes is bool &&
+        data.enableFeedback is bool &&
+        data.adminPin is string && data.adminPin.size() >= 4 && data.adminPin.size() <= 12 &&
+        data.updatedAt is number && data.updatedAt >= 0 &&
+        (!('orderUnlockAll' in data) || (data.orderUnlockAll is bool)) &&
+        (!('orderUnit1Open' in data) || (data.orderUnit1Open is bool)) &&
+        (!('orderUnit2Open' in data) || (data.orderUnit2Open is bool)) &&
+        (!('orderUnit3Open' in data) || (data.orderUnit3Open is bool)) &&
+        (!('unit1Open' in data) || (data.unit1Open is bool)) &&
+        (!('unit2Open' in data) || (data.unit2Open is bool)) &&
+        (!('unit3Open' in data) || (data.unit3Open is bool)) &&
+        (!('tickerCustomText' in data) || (data.tickerCustomText is string)) &&
+        (!('tickerAnnouncements' in data) || (data.tickerAnnouncements is list));
+    }
+
+    function isValidFeedback(data) {
+      return data.keys().hasAll(['role', 'cls', 'text', 'status', 'createdAt']) &&
+        data.keys().hasOnly(['role', 'cls', 'text', 'status', 'createdAt']) &&
+        data.role is string && data.role.size() >= 2 && data.role.size() <= 50 &&
+        data.cls is string && data.cls.size() >= 1 && data.cls.size() <= 30 &&
+        data.text is string && data.text.size() >= 2 && data.text.size() <= 500 &&
+        data.status is string && data.status.size() >= 2 && data.status.size() <= 40 &&
+        data.createdAt is number && data.createdAt >= 0;
+    }
+
+    function isValidParentMessage(data) {
+      return data.keys().hasAll([
+          'studentId', 'studentName', 'studentCls', 'category', 'text', 'status', 'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'studentId', 'studentName', 'studentCls', 'category', 'text', 'status', 'createdAt',
+          'replyText', 'replyAt', 'teacherName'
+        ]) &&
+        data.studentId is string && data.studentId.size() >= 1 && data.studentId.size() <= 128 &&
+        data.studentName is string && data.studentName.size() >= 1 && data.studentName.size() <= 100 &&
+        data.studentCls is string && data.studentCls.size() <= 40 &&
+        data.category is string && data.category.size() <= 60 &&
+        data.text is string && data.text.size() >= 1 && data.text.size() <= 1000 &&
+        data.status is string && data.status.size() <= 40 &&
+        data.createdAt is number && data.createdAt >= 0 &&
+        (!('replyText' in data) || (data.replyText is string && data.replyText.size() <= 1000)) &&
+        (!('replyAt' in data) || (data.replyAt is number)) &&
+        (!('teacherName' in data) || (data.teacherName is string && data.teacherName.size() <= 100));
+    }
+
+    match /students/{studentId} {
+      allow read: if true;
+      allow create: if isValidId(studentId) && isValidStudent(incoming());
+      allow update: if isValidId(studentId) && isValidStudent(incoming()) && (
+        isAdmin() ||
+        incoming().profileId == existing().profileId
+      );
+      allow delete: if isValidId(studentId);
+    }
+
+    match /custom_challenges/{challengeId} {
+      allow read: if true;
+      allow create: if isValidId(challengeId) && isValidChallenge(incoming());
+      allow update: if isValidId(challengeId) && isValidChallenge(incoming());
+      allow delete: if isValidId(challengeId);
+    }
+
+    match /app_settings/{settingId} {
+      allow read: if true;
+      allow create: if isValidId(settingId) && isValidSettings(incoming());
+      allow update: if isValidId(settingId) && isValidSettings(incoming());
+      allow delete: if isValidId(settingId);
+    }
+
+    match /feedback/{feedbackId} {
+      allow read: if true;
+      allow create: if isValidId(feedbackId) && isValidFeedback(incoming());
+      allow update: if isValidId(feedbackId) && isValidFeedback(incoming());
+      allow delete: if isValidId(feedbackId);
+    }
+
+    match /parent_messages/{messageId} {
+      allow read: if true;
+      allow create: if isValidId(messageId) && isValidParentMessage(incoming());
+      allow update: if isValidId(messageId) && isValidParentMessage(incoming());
+      allow delete: if isValidId(messageId);
+    }
+  }
+}
