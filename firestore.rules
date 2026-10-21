@@ -39,7 +39,8 @@ service cloud.firestore {
           'correct', 'attempts', 'progress', 'completed', 'nafesStageIndex',
           'dailyCurrentIndex', 'dailyNextUnlockMs', 'lastQuizTitle',
           'lastQuizScore', 'lastQuizTotal', 'isBlocked', 'raceCompletedAt',
-          'finishLineReached', 'scoredQuestions', 'updatedAt'
+          'finishLineReached', 'scoredQuestions', 'updatedAt',
+          'completedNafesStages', 'registeredAt', 'lastActiveAt', 'sessionCount', 'gradeLevel', 'lastActivityType'
         ]) &&
         data.profileId is string && data.profileId.size() >= 2 && data.profileId.size() <= 100 &&
         data.name is string && data.name.size() >= 1 && data.name.size() <= 80 &&
@@ -62,7 +63,13 @@ service cloud.firestore {
         (!('isBlocked' in data) || (data.isBlocked is bool)) &&
         (!('raceCompletedAt' in data) || (data.raceCompletedAt is number)) &&
         (!('finishLineReached' in data) || (data.finishLineReached is bool)) &&
-        (!('scoredQuestions' in data) || (data.scoredQuestions is list && data.scoredQuestions.size() <= 500));
+        (!('scoredQuestions' in data) || (data.scoredQuestions is list && data.scoredQuestions.size() <= 500)) &&
+        (!('completedNafesStages' in data) || (data.completedNafesStages is list && data.completedNafesStages.size() <= 10)) &&
+        (!('registeredAt' in data) || (data.registeredAt is number && data.registeredAt >= 0)) &&
+        (!('lastActiveAt' in data) || (data.lastActiveAt is number && data.lastActiveAt >= 0)) &&
+        (!('sessionCount' in data) || (data.sessionCount is number && data.sessionCount >= 0)) &&
+        (!('gradeLevel' in data) || (data.gradeLevel is string && data.gradeLevel.size() <= 50)) &&
+        (!('lastActivityType' in data) || (data.lastActivityType is string && data.lastActivityType.size() <= 60));
     }
 
     function isValidChallenge(data) {

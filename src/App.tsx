@@ -47,6 +47,7 @@ import { ParentMessagesModal } from './parentMessagesModal';
 import { TeacherMessagesManager } from './teacherMessagesManager';
 import { TeacherAnnouncementsManager } from './teacherAnnouncementsManager';
 import { RaceFinishModal } from './raceFinishModal';
+import { StudentStatsManager } from './studentStatsManager';
 import {
   db,
   auth,
@@ -126,9 +127,15 @@ interface StudentProfile {
   finishLineReached?: boolean;
   completedQuestionIds?: string[];
   gameCooldowns?: Record<string, number>;
+  registeredAt?: number;
+  lastActiveAt?: number;
+  sessionCount?: number;
+  gradeLevel?: string;
+  lastActivityType?: string;
+  updatedAt?: number;
 }
 
-interface CloudStudentRow {
+export interface CloudStudentRow {
   docId: string;
   profileId: string;
   name: string;
@@ -151,6 +158,11 @@ interface CloudStudentRow {
   raceCompletedAt?: number;
   finishLineReached?: boolean;
   updatedAt: number;
+  registeredAt?: number;
+  lastActiveAt?: number;
+  sessionCount?: number;
+  gradeLevel?: string;
+  lastActivityType?: string;
 }
 
 interface AppSettings {
@@ -503,7 +515,7 @@ export default function App() {
 
   // Admin panel active tab
   const [adminTab, setAdminTab] = useState<
-    'students' | 'challenges' | 'announcements' | 'parentMessages' | 'schedule' | 'nafesStages' | 'settings' | 'feedback'
+    'students' | 'studentStats' | 'challenges' | 'announcements' | 'parentMessages' | 'schedule' | 'nafesStages' | 'settings' | 'feedback'
   >('students');
   const [schedOpenInput, setSchedOpenInput] = useState<string>(() => appSettings.scheduledOpenAt || '');
   const [schedCloseInput, setSchedCloseInput] = useState<string>(() => appSettings.scheduledCloseAt || '');
@@ -649,6 +661,47 @@ export default function App() {
     adminUnlockedByPin ||
     Boolean(firebaseUser?.email && firebaseUser.email.toLowerCase() === ADMIN_EMAIL.toLowerCase());
 
+  // تتبع الجلسات ونبضات التواجد الفعلي للطلاب في الوقت الحقيقي (Realtime Presence & Heartbeat)
+  useEffect(() => {
+    if (!activeId || !profiles[activeId]) return;
+
+    // تسجيل الجلسة بدقة مرة واحدة فقط لكل جلسة متصفح بدون تكرار عند التحديث أو إعادة الرندر
+    const sessionKey = `LT_SESSION_RECORDED_${activeId}`;
+    try {
+      if (!sessionStorage.getItem(sessionKey)) {
+        sessionStorage.setItem(sessionKey, 'true');
+        setProfiles(prev => {
+          const p = prev[activeId];
+          if (!p) return prev;
+          const currentCount = typeof p.sessionCount === 'number' ? p.sessionCount : 0;
+          const updated = {
+            ...p,
+            sessionCount: currentCount + 1,
+            lastActiveAt: Date.now(),
+            lastActivityType: 'تسجيل دخول'
+          };
+          syncProfileToCloud(activeId, updated);
+          return { ...prev, [activeId]: updated };
+        });
+      }
+    } catch {}
+
+    // نبضات التواجد الدورية كل 35 ثانية لتحديث حالة "متصل الآن" وتفادي احتساب الجلسات غير النشطة
+    const heartbeatTimer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      const now = Date.now();
+      setProfiles(prev => {
+        const p = prev[activeId];
+        if (!p) return prev;
+        const updated = { ...p, lastActiveAt: now };
+        syncProfileToCloud(activeId, updated);
+        return { ...prev, [activeId]: updated };
+      });
+    }, 35000);
+
+    return () => clearInterval(heartbeatTimer);
+  }, [activeId]);
+
   // =========================================================================
   // نظام مواعيد المنصة وصلاحيات فتح وإغلاق المنصة — تحكم كامل للمعلم
   // أولوية التحكم اليدوي المباشر، مع خيار الجدولة التلقائية
@@ -779,7 +832,7 @@ export default function App() {
   const syncProfileToCloud = async (profileId: string, p: StudentProfile) => {
     const safeId = toSafeDocId(profileId);
     const daily = p.dailyChallenge || localDailyState;
-    const payload = {
+    const payload: Record<string, any> = {
       profileId: profileId.slice(0, 100),
       name: p.name.slice(0, 80),
       code: p.code.slice(0, 4),
@@ -799,8 +852,20 @@ export default function App() {
       isBlocked: Boolean(p.isBlocked),
       raceCompletedAt: p.raceCompletedAt ? Number(p.raceCompletedAt) : 0,
       finishLineReached: Boolean(p.finishLineReached),
+      gradeLevel: (p.gradeLevel || 'الأول المتوسط').slice(0, 50),
+      lastActivityType: (p.lastActivityType || 'نشاط بالمنصة').slice(0, 60),
+      lastActiveAt: p.lastActiveAt ? Number(p.lastActiveAt) : Date.now(),
       updatedAt: Date.now()
     };
+    if (p.registeredAt) {
+      payload.registeredAt = Number(p.registeredAt);
+    }
+    if (typeof p.sessionCount === 'number') {
+      payload.sessionCount = Number(p.sessionCount);
+    }
+    if (Array.isArray(p.completedNafesStages) && p.completedNafesStages.length > 0) {
+      payload.completedNafesStages = p.completedNafesStages.slice(0, 10);
+    }
     try {
       await setDoc(doc(db, 'students', safeId), payload);
     } catch (err) {
@@ -844,7 +909,13 @@ export default function App() {
               isBlocked: Boolean(data.isBlocked),
               raceCompletedAt: Number(data.raceCompletedAt || 0),
               finishLineReached: Boolean(data.finishLineReached),
-              updatedAt: data.updatedAt || 0
+              updatedAt: data.updatedAt || 0,
+              registeredAt: data.registeredAt ? Number(data.registeredAt) : undefined,
+              lastActiveAt: data.lastActiveAt ? Number(data.lastActiveAt) : data.updatedAt ? Number(data.updatedAt) : undefined,
+              sessionCount: typeof data.sessionCount === 'number' ? Number(data.sessionCount) : undefined,
+              gradeLevel: data.gradeLevel || 'الأول المتوسط',
+              lastActivityType: data.lastActivityType || '—',
+              completedNafesStages: Array.isArray(data.completedNafesStages) ? data.completedNafesStages : []
             });
           }
         });
@@ -1333,12 +1404,20 @@ export default function App() {
       lastQuizScore: 0,
       lastQuizTotal: 0,
       isBlocked: false,
+      registeredAt: Date.now(),
+      lastActiveAt: Date.now(),
+      sessionCount: 1,
+      gradeLevel: 'الأول المتوسط',
+      lastActivityType: 'تسجيل جديد',
       dailyChallenge: {
         currentIndex: 0,
         nextUnlockMs: 0,
         solvedDays: {}
       }
     };
+    try {
+      sessionStorage.setItem(`LT_SESSION_RECORDED_${id}`, 'true');
+    } catch {}
     setProfiles(prev => ({ ...prev, [id]: created }));
     setActiveId(id);
     syncProfileToCloud(id, created);
@@ -1380,11 +1459,16 @@ export default function App() {
         mistakes: [],
         resolvedMistakesCount: 0,
         nafesStageIndex: foundCloud.nafesStageIndex || 0,
-        completedNafesStages: [],
+        completedNafesStages: foundCloud.completedNafesStages || [],
         lastQuizTitle: foundCloud.lastQuizTitle,
         lastQuizScore: foundCloud.lastQuizScore,
         lastQuizTotal: foundCloud.lastQuizTotal,
         isBlocked: foundCloud.isBlocked,
+        registeredAt: foundCloud.registeredAt,
+        lastActiveAt: Date.now(),
+        sessionCount: (foundCloud.sessionCount || 0) + 1,
+        gradeLevel: foundCloud.gradeLevel || 'الأول المتوسط',
+        lastActivityType: 'تسجيل دخول',
         dailyChallenge: {
           currentIndex: foundCloud.dailyCurrentIndex || 0,
           nextUnlockMs: foundCloud.dailyNextUnlockMs || 0,
@@ -1392,8 +1476,12 @@ export default function App() {
         }
       };
 
+      try {
+        sessionStorage.setItem(`LT_SESSION_RECORDED_${foundCloud.profileId}`, 'true');
+      } catch {}
       setProfiles(prev => ({ ...prev, [foundCloud.profileId]: restoredProfile }));
       setActiveId(foundCloud.profileId);
+      syncProfileToCloud(foundCloud.profileId, restoredProfile);
       setLoginName('');
       setLoginPin('');
       setActiveModal(null);
@@ -3018,7 +3106,13 @@ export default function App() {
           lastQuizScore: p.lastQuizScore || 0,
           lastQuizTotal: p.lastQuizTotal || 0,
           isBlocked: Boolean(p.isBlocked),
-          updatedAt: Date.now()
+          updatedAt: Date.now(),
+          registeredAt: p.registeredAt,
+          lastActiveAt: p.lastActiveAt || p.updatedAt,
+          sessionCount: p.sessionCount,
+          gradeLevel: p.gradeLevel || 'الأول المتوسط',
+          lastActivityType: p.lastActivityType || '—',
+          completedNafesStages: p.completedNafesStages || []
         });
       }
     });
@@ -5281,6 +5375,18 @@ export default function App() {
                       🐎 إدارة الطلاب والفرسان ({leaderboardStudents.length})
                     </button>
                     <button
+                      className={`btn ${adminTab === 'studentStats' ? 'primary' : 'light'}`}
+                      onClick={() => setAdminTab('studentStats')}
+                      style={{
+                        background: adminTab === 'studentStats' ? undefined : '#f0fdf4',
+                        color: adminTab === 'studentStats' ? undefined : '#166534',
+                        borderColor: '#86efac',
+                        fontWeight: 700
+                      }}
+                    >
+                      📊 إحصائيات ونشاط الطلاب
+                    </button>
+                    <button
                       className={`btn ${adminTab === 'challenges' ? 'primary' : 'light'}`}
                       onClick={() => setAdminTab('challenges')}
                     >
@@ -5778,6 +5884,19 @@ export default function App() {
                         );
                       })}
                     </div>
+                  </div>
+                )}
+
+                {/* TAB: STUDENT STATISTICS AND ACTIVITY DASHBOARD */}
+                {adminTab === 'studentStats' && (
+                  <div style={{ marginBottom: 20 }}>
+                    <StudentStatsManager
+                      students={leaderboardStudents}
+                      isTeacherAdmin={isTeacherAdmin}
+                      onRefresh={() => {
+                        showNotice('تم تحديث بيانات ونشاط الطلاب بنجاح.');
+                      }}
+                    />
                   </div>
                 )}
 

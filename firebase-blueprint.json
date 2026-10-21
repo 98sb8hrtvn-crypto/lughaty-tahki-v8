@@ -96,6 +96,32 @@
           "type": "array",
           "description": "Ledger of scored question identifiers to prevent repeat scoring"
         },
+        "completedNafesStages": {
+          "type": "array",
+          "description": "List of completed Nafes stages ids"
+        },
+        "registeredAt": {
+          "type": "number",
+          "description": "First recorded registration or login timestamp ms"
+        },
+        "lastActiveAt": {
+          "type": "number",
+          "description": "Latest heartbeat or activity timestamp ms"
+        },
+        "sessionCount": {
+          "type": "number",
+          "description": "Total count of student visits and sessions"
+        },
+        "gradeLevel": {
+          "type": "string",
+          "description": "Academic grade level (e.g. الأول المتوسط)",
+          "maxLength": 50
+        },
+        "lastActivityType": {
+          "type": "string",
+          "description": "Category of student's latest activity",
+          "maxLength": 60
+        },
         "updatedAt": {
           "type": "number",
           "description": "Client/server epoch ms of last update"
