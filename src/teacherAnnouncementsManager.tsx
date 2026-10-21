@@ -5,7 +5,7 @@ interface TeacherAnnouncementsManagerProps {
   announcements: TeacherAnnouncementItem[];
   customSingleText?: string;
   onUpdateAnnouncements: (updated: TeacherAnnouncementItem[], singleText?: string) => void;
-  onSaveToCloud: () => void;
+  onSaveToCloud: (updated?: TeacherAnnouncementItem[], singleText?: string) => Promise<void> | void;
 }
 
 export const TeacherAnnouncementsManager: React.FC<TeacherAnnouncementsManagerProps> = ({
@@ -19,6 +19,14 @@ export const TeacherAnnouncementsManager: React.FC<TeacherAnnouncementsManagerPr
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState('');
   const [singleTextDraft, setSingleTextDraft] = useState(customSingleText);
+  const [actionNotice, setActionNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const showFeedback = (text: string, type: 'success' | 'error' = 'success') => {
+    setActionNotice({ type, text });
+    setTimeout(() => {
+      setActionNotice(null);
+    }, 4500);
+  };
 
   const presets = [
     { cat: 'تحفيز' as const, text: '🏆 أبطال لغتي الخالدة: المنافسة تشتد في مضمار السباق، باركوا للفرسان المتصدرين!' },
@@ -27,8 +35,8 @@ export const TeacherAnnouncementsManager: React.FC<TeacherAnnouncementsManagerPr
     { cat: 'عام' as const, text: '🇸🇦 نعتز بلغتنا العربية وهويتنا الوطنية.. استعدوا لمراحل نافس المعيارية القادمة!' }
   ];
 
-  const handleAdd = (cat?: 'توجيه' | 'تنبيه' | 'تحفيز' | 'عام', txt?: string) => {
-    const textToAdd = txt || newText.trim();
+  const handleAdd = async (cat?: 'توجيه' | 'تنبيه' | 'تحفيز' | 'عام', txt?: string) => {
+    const textToAdd = (txt || newText).trim();
     const catToAdd = cat || newCategory;
     if (!textToAdd) return;
 
@@ -44,19 +52,37 @@ export const TeacherAnnouncementsManager: React.FC<TeacherAnnouncementsManagerPr
     const next = [...announcements, newItem];
     onUpdateAnnouncements(next, singleTextDraft);
     if (!txt) setNewText('');
+    try {
+      await onSaveToCloud(next, singleTextDraft);
+      showFeedback('✅ تم إضافة التوجيه ونشره وحفظه سحابياً بنجاح!');
+    } catch {
+      showFeedback('❌ حدث خطأ أثناء الحفظ في السحابة', 'error');
+    }
   };
 
-  const handleToggle = (id: string) => {
+  const handleToggle = async (id: string) => {
     const next = announcements.map(a => (a.id === id ? { ...a, active: !a.active } : a));
     onUpdateAnnouncements(next, singleTextDraft);
+    try {
+      await onSaveToCloud(next, singleTextDraft);
+      showFeedback('✅ تم تحديث حالة التوجيه وحفظه سحابياً!');
+    } catch {
+      showFeedback('❌ حدث خطأ أثناء الحفظ', 'error');
+    }
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     const next = announcements.filter(a => a.id !== id);
     onUpdateAnnouncements(next, singleTextDraft);
+    try {
+      await onSaveToCloud(next, singleTextDraft);
+      showFeedback('🗑️ تم حذف التوجيه وحفظ التغييرات سحابياً!');
+    } catch {
+      showFeedback('❌ حدث خطأ أثناء الحذف', 'error');
+    }
   };
 
-  const handleMove = (index: number, direction: 'up' | 'down') => {
+  const handleMove = async (index: number, direction: 'up' | 'down') => {
     const targetIndex = direction === 'up' ? index - 1 : index + 1;
     if (targetIndex < 0 || targetIndex >= announcements.length) return;
     const next = [...announcements];
@@ -65,13 +91,40 @@ export const TeacherAnnouncementsManager: React.FC<TeacherAnnouncementsManagerPr
     next[targetIndex] = temp;
     const reordered = next.map((item, idx) => ({ ...item, order: idx + 1 }));
     onUpdateAnnouncements(reordered, singleTextDraft);
+    try {
+      await onSaveToCloud(reordered, singleTextDraft);
+      showFeedback('✅ تم إعادة ترتيب التوجيهات وحفظها سحابياً!');
+    } catch {
+      showFeedback('❌ حدث خطأ أثناء الترتيب', 'error');
+    }
   };
 
-  const handleSaveEdit = (id: string) => {
+  const handleSaveEdit = async (id: string) => {
     if (!editingText.trim()) return;
     const next = announcements.map(a => (a.id === id ? { ...a, text: editingText.trim() } : a));
     onUpdateAnnouncements(next, singleTextDraft);
     setEditingId(null);
+    try {
+      await onSaveToCloud(next, singleTextDraft);
+      showFeedback('✅ تم حفظ تعديل التوجيه ونشره سحابياً!');
+    } catch {
+      showFeedback('❌ حدث خطأ أثناء الحفظ', 'error');
+    }
+  };
+
+  const handlePublishSingleText = async () => {
+    const textToPublish = singleTextDraft.trim();
+    onUpdateAnnouncements(announcements, textToPublish);
+    try {
+      await onSaveToCloud(announcements, textToPublish);
+      showFeedback(
+        textToPublish
+          ? '🚀 تم نشر التوجيه في شريط السباق وحفظه سحابياً! يظهر فوراً لجميع الطلاب.'
+          : '✅ تم مسح التوجيه وتحديث الشريط سحابياً!'
+      );
+    } catch {
+      showFeedback('❌ تعذر نشر النص سحابياً، تحقق من الاتصال', 'error');
+    }
   };
 
   return (
@@ -95,17 +148,43 @@ export const TeacherAnnouncementsManager: React.FC<TeacherAnnouncementsManagerPr
             <span>📢</span> إدارة نصوص شريط البث المباشر وتوجيهات المعلم
           </h3>
           <p style={{ margin: '3px 0 0', fontSize: 13, color: '#d1fae5' }}>
-            تحكم في نصوص التوجيهات والرسائل التي تظهر بشكل مستمر في شريط السباق أمام جميع الطلاب، مع إمكانية كتابة ما تشاء وحفظه سحابياً فوراً.
+            تحكم في نصوص التوجيهات والرسائل التي تظهر بشكل مستمر في شريط السباق أمام جميع الطلاب، مع حفظ سحابي دائم عبر Firebase.
           </p>
         </div>
         <button
           className="btn gold"
-          onClick={onSaveToCloud}
+          onClick={() => handlePublishSingleText()}
           style={{ padding: '8px 16px', fontWeight: 800, fontSize: 13 }}
         >
           💾 حفظ وتطبيق التعديلات سحابياً
         </button>
       </div>
+
+      {actionNotice && (
+        <div
+          style={{
+            background: actionNotice.type === 'success' ? '#ecfdf5' : '#fef2f2',
+            border: `1.5px solid ${actionNotice.type === 'success' ? '#10b981' : '#ef4444'}`,
+            color: actionNotice.type === 'success' ? '#065f46' : '#991b1b',
+            borderRadius: 10,
+            padding: '10px 16px',
+            fontSize: 13.5,
+            fontWeight: 800,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.06)'
+          }}
+        >
+          <span>{actionNotice.text}</span>
+          <button
+            onClick={() => setActionNotice(null)}
+            style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 16, color: 'inherit' }}
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       {/* قسم كتابة نص حر للمعلم يظهر في شريط السباق فوراً */}
       <div
@@ -121,10 +200,10 @@ export const TeacherAnnouncementsManager: React.FC<TeacherAnnouncementsManagerPr
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
           <strong style={{ fontSize: 14, color: '#92400e', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span>✍️</span> كتابة حرة للمعلم تظهر مباشرة في شريط السباق أمام جميع الطلاب:
+            <span>✍️</span> كتابة رسالة أو توجيه يظهر مباشرة في شريط السباق أمام جميع الطلاب:
           </strong>
           <span style={{ fontSize: 12, color: '#b45309', fontWeight: 700 }}>
-            {singleTextDraft.trim() ? '🟢 النص منشور حالياً في الشريط' : '⚪ لا يوجد نص مخصص حالياً'}
+            {singleTextDraft.trim() ? '🟢 منشور حالياً في الشريط' : '⚪ لا يوجد نص مخصص حالياً'}
           </span>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -132,7 +211,7 @@ export const TeacherAnnouncementsManager: React.FC<TeacherAnnouncementsManagerPr
             type="text"
             value={singleTextDraft}
             onChange={e => setSingleTextDraft(e.target.value)}
-            placeholder="اكتب هنا أي نص تريده ليظهر في شريط السباق أمام جميع الطلاب (مثال: موعد اختبار الوحدة، أو تهنئة للمتفوقين)..."
+            placeholder="اكتب هنا أي نص أو توجيه تريده ليظهر في شريط السباق أمام جميع الطلاب (مثال: موعد التحدي القادم، أو تنبيه لمراجعة درس الحروف الناسخة)..."
             style={{
               flex: 1,
               minWidth: 260,
@@ -146,10 +225,7 @@ export const TeacherAnnouncementsManager: React.FC<TeacherAnnouncementsManagerPr
           />
           <button
             className="btn gold"
-            onClick={() => {
-              onUpdateAnnouncements(announcements, singleTextDraft.trim());
-              onSaveToCloud();
-            }}
+            onClick={handlePublishSingleText}
             style={{ padding: '8px 18px', fontWeight: 800, fontSize: 13 }}
           >
             نشر في شريط السباق 🚀
@@ -160,7 +236,8 @@ export const TeacherAnnouncementsManager: React.FC<TeacherAnnouncementsManagerPr
               onClick={() => {
                 setSingleTextDraft('');
                 onUpdateAnnouncements(announcements, '');
-                onSaveToCloud();
+                onSaveToCloud(announcements, '');
+                showFeedback('🗑️ تم مسح النص المخصص وتحديث الشريط سحابياً');
               }}
               style={{ padding: '8px 14px', fontSize: 12 }}
               title="مسح النص"
@@ -170,7 +247,7 @@ export const TeacherAnnouncementsManager: React.FC<TeacherAnnouncementsManagerPr
           )}
         </div>
         <small style={{ color: '#78350f', fontSize: 11.5 }}>
-          💡 اكتب ما تشاء وسيظهر مباشرة في شريط السباق المتدفق أمام جميع الطلاب، ويمكنك تعديله أو حذفه في أي وقت.
+          💡 اكتب ما تشاء وسيظهر مباشرة في شريط السباق المتدفق أمام جميع الطلاب، ويظل محفوظاً سحابياً حتى بعد تحديث الصفحة.
         </small>
       </div>
 
@@ -188,7 +265,7 @@ export const TeacherAnnouncementsManager: React.FC<TeacherAnnouncementsManagerPr
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
           <strong style={{ fontSize: 14, color: '#1e293b', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span>➕</span> إضافة توجيه أو رسالة إضافية لشريط السباق:
+            <span>➕</span> إضافة توجيه إضافي إلى قائمة رسائل الشريط:
           </strong>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <span style={{ fontSize: 12, color: '#64748b' }}>النوع:</span>
@@ -217,7 +294,7 @@ export const TeacherAnnouncementsManager: React.FC<TeacherAnnouncementsManagerPr
             type="text"
             value={newText}
             onChange={e => setNewText(e.target.value)}
-            placeholder="اكتب التوجيه أو الرسالة هنا (مثال: موعد التحدي القادم، أو تنبيه لمراجعة درس الحروف الناسخة)..."
+            placeholder="اكتب التوجيه أو الرسالة هنا..."
             style={{
               flex: 1,
               minWidth: 260,
@@ -263,7 +340,7 @@ export const TeacherAnnouncementsManager: React.FC<TeacherAnnouncementsManagerPr
       <div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
           <h4 style={{ margin: 0, fontSize: 15, color: '#1e293b' }}>
-            📋 قائمة التوجيهات المخصصة ({announcements.length})
+            📋 قائمة الرسائل والتوجيهات المضافة ({announcements.length})
           </h4>
           <span style={{ fontSize: 12, color: '#64748b' }}>
             المفعّلة حالياً: {announcements.filter(a => a.active).length}

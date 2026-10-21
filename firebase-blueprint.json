@@ -37,7 +37,7 @@
         },
         "badges": {
           "type": "array",
-          "description": "List of earned badge names (bounded up to 20)"
+          "description": "List of earned badge names (bounded up to 40)"
         },
         "correct": {
           "type": "number",
@@ -57,7 +57,7 @@
         },
         "nafesStageIndex": {
           "type": "number",
-          "description": "Index of current Nafes renewable exam stage (0 = Unit 1, 1 = Unit 2, 2 = Unit 3, 3+ = Renewable stages)"
+          "description": "Index of current Nafes exam stage reached"
         },
         "dailyCurrentIndex": {
           "type": "number",
@@ -65,7 +65,7 @@
         },
         "dailyNextUnlockMs": {
           "type": "number",
-          "description": "Timestamp in ms when the next daily challenge unlocks (strictly 24h after solving previous)"
+          "description": "Timestamp in ms when the next daily challenge unlocks"
         },
         "lastQuizTitle": {
           "type": "string",
@@ -83,6 +83,18 @@
         "isBlocked": {
           "type": "boolean",
           "description": "Whether student profile is paused/restricted by admin"
+        },
+        "raceCompletedAt": {
+          "type": "number",
+          "description": "Timestamp ms when race completion was reached"
+        },
+        "finishLineReached": {
+          "type": "boolean",
+          "description": "Whether student reached finish gate requirements"
+        },
+        "scoredQuestions": {
+          "type": "array",
+          "description": "Ledger of scored question identifiers to prevent repeat scoring"
         },
         "updatedAt": {
           "type": "number",
@@ -174,7 +186,7 @@
     },
     "AppSettingsDoc": {
       "title": "AppSettingsDoc",
-      "description": "Global application settings, announcements, and feature permissions controlled by the teacher/admin.",
+      "description": "Global application settings, announcements, scheduling, unit locks, games locks, and Nafes stages permissions controlled by teacher.",
       "type": "object",
       "properties": {
         "announcement": {
@@ -188,11 +200,11 @@
         },
         "enableGames": {
           "type": "boolean",
-          "description": "Permission toggle to enable or disable language games"
+          "description": "Master permission toggle to enable or disable language games center"
         },
         "enableNafes": {
           "type": "boolean",
-          "description": "Permission toggle to enable or disable Nafes exams"
+          "description": "Master permission toggle to enable or disable Nafes national exams"
         },
         "enableFeedback": {
           "type": "boolean",
@@ -203,6 +215,99 @@
           "description": "Teacher quick access PIN",
           "minLength": 4,
           "maxLength": 12
+        },
+        "platformManualStatus": {
+          "type": "string",
+          "description": "Manual platform status override ('open' or 'closed')",
+          "maxLength": 20
+        },
+        "scheduleEnabled": {
+          "type": "boolean",
+          "description": "Whether automated time scheduling is active or manual control is in effect"
+        },
+        "scheduledOpenAt": {
+          "type": "string",
+          "description": "Scheduled opening ISO / datetime-local string",
+          "maxLength": 50
+        },
+        "scheduledCloseAt": {
+          "type": "string",
+          "description": "Scheduled closing ISO / datetime-local string",
+          "maxLength": 50
+        },
+        "scheduleNote": {
+          "type": "string",
+          "description": "Custom note regarding operating schedule",
+          "maxLength": 200
+        },
+        "unit1Open": {
+          "type": "boolean",
+          "description": "Permission toggle for Unit 1"
+        },
+        "unit2Open": {
+          "type": "boolean",
+          "description": "Permission toggle for Unit 2"
+        },
+        "unit3Open": {
+          "type": "boolean",
+          "description": "Permission toggle for Unit 3"
+        },
+        "orderUnit1Open": {
+          "type": "boolean",
+          "description": "Permission toggle for Order Game Unit 1"
+        },
+        "orderUnit2Open": {
+          "type": "boolean",
+          "description": "Permission toggle for Order Game Unit 2"
+        },
+        "orderUnit3Open": {
+          "type": "boolean",
+          "description": "Permission toggle for Order Game Unit 3"
+        },
+        "orderUnlockAll": {
+          "type": "boolean",
+          "description": "Teacher master bypass for all order units"
+        },
+        "gameDetectiveOpen": {
+          "type": "boolean",
+          "description": "Permission toggle for Detective game"
+        },
+        "gameOrderOpen": {
+          "type": "boolean",
+          "description": "Permission toggle for Order Sentence game"
+        },
+        "gameMeaningOpen": {
+          "type": "boolean",
+          "description": "Permission toggle for Vocabulary Meaning game"
+        },
+        "gameSpeedOpen": {
+          "type": "boolean",
+          "description": "Permission toggle for Speed Challenge game"
+        },
+        "nafesStage1Open": {
+          "type": "boolean",
+          "description": "Permission toggle for Nafes Stage 1"
+        },
+        "nafesStage2Open": {
+          "type": "boolean",
+          "description": "Permission toggle for Nafes Stage 2"
+        },
+        "nafesStage3Open": {
+          "type": "boolean",
+          "description": "Permission toggle for Nafes Stage 3"
+        },
+        "nafesStage4Open": {
+          "type": "boolean",
+          "description": "Permission toggle for Nafes Stage 4"
+        },
+        "tickerCustomText": {
+          "type": "string",
+          "description": "Custom teacher broadcast message in race ticker",
+          "maxLength": 500
+        },
+        "tickerAnnouncements": {
+          "type": "array",
+          "description": "List of structured teacher announcements for race ticker"
         },
         "updatedAt": {
           "type": "number",
@@ -226,7 +331,7 @@
       "properties": {
         "role": {
           "type": "string",
-          "description": "Sender role (ولي أمر طالب / ولي أمر طالبة)",
+          "description": "Sender role",
           "minLength": 2,
           "maxLength": 50
         },
@@ -244,7 +349,7 @@
         },
         "status": {
           "type": "string",
-          "description": "Moderation status (قيد المراجعة / معتمد ومنشور)",
+          "description": "Moderation status",
           "minLength": 2,
           "maxLength": 40
         },
@@ -256,6 +361,32 @@
       "required": [
         "role",
         "cls",
+        "text",
+        "status",
+        "createdAt"
+      ]
+    },
+    "ParentMessageDoc": {
+      "title": "ParentMessageDoc",
+      "description": "Confidential communication message between parent/student and the teacher.",
+      "type": "object",
+      "properties": {
+        "studentId": { "type": "string", "maxLength": 128 },
+        "studentName": { "type": "string", "maxLength": 100 },
+        "studentCls": { "type": "string", "maxLength": 40 },
+        "category": { "type": "string", "maxLength": 60 },
+        "text": { "type": "string", "maxLength": 1000 },
+        "status": { "type": "string", "maxLength": 40 },
+        "createdAt": { "type": "number" },
+        "replyText": { "type": "string", "maxLength": 1000 },
+        "replyAt": { "type": "number" },
+        "teacherName": { "type": "string", "maxLength": 100 }
+      },
+      "required": [
+        "studentId",
+        "studentName",
+        "studentCls",
+        "category",
         "text",
         "status",
         "createdAt"
@@ -278,6 +409,10 @@
     "/feedback/{feedbackId}": {
       "schema": { "$ref": "#/entities/FeedbackDoc" },
       "description": "Parent suggestions and feedback with admin approval."
+    },
+    "/parent_messages/{messageId}": {
+      "schema": { "$ref": "#/entities/ParentMessageDoc" },
+      "description": "Parent and teacher private messages."
     }
   }
 }

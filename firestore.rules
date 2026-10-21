@@ -38,7 +38,8 @@ service cloud.firestore {
           'docId', 'profileId', 'name', 'code', 'cls', 'points', 'badges',
           'correct', 'attempts', 'progress', 'completed', 'nafesStageIndex',
           'dailyCurrentIndex', 'dailyNextUnlockMs', 'lastQuizTitle',
-          'lastQuizScore', 'lastQuizTotal', 'isBlocked', 'raceCompletedAt', 'finishLineReached', 'updatedAt'
+          'lastQuizScore', 'lastQuizTotal', 'isBlocked', 'raceCompletedAt',
+          'finishLineReached', 'scoredQuestions', 'updatedAt'
         ]) &&
         data.profileId is string && data.profileId.size() >= 2 && data.profileId.size() <= 100 &&
         data.name is string && data.name.size() >= 1 && data.name.size() <= 80 &&
@@ -60,7 +61,8 @@ service cloud.firestore {
         (!('lastQuizTotal' in data) || (data.lastQuizTotal is number && data.lastQuizTotal >= 0)) &&
         (!('isBlocked' in data) || (data.isBlocked is bool)) &&
         (!('raceCompletedAt' in data) || (data.raceCompletedAt is number)) &&
-        (!('finishLineReached' in data) || (data.finishLineReached is bool));
+        (!('finishLineReached' in data) || (data.finishLineReached is bool)) &&
+        (!('scoredQuestions' in data) || (data.scoredQuestions is list && data.scoredQuestions.size() <= 500));
     }
 
     function isValidChallenge(data) {
@@ -93,7 +95,11 @@ service cloud.firestore {
           'announcement', 'enforce24hChallengeLock', 'enableGames',
           'enableNafes', 'enableFeedback', 'adminPin', 'updatedAt',
           'orderUnlockAll', 'orderUnit1Open', 'orderUnit2Open', 'orderUnit3Open',
-          'unit1Open', 'unit2Open', 'unit3Open', 'tickerCustomText', 'tickerAnnouncements'
+          'unit1Open', 'unit2Open', 'unit3Open',
+          'gameDetectiveOpen', 'gameOrderOpen', 'gameMeaningOpen', 'gameSpeedOpen',
+          'platformManualStatus', 'scheduleEnabled', 'scheduledOpenAt', 'scheduledCloseAt', 'scheduleNote',
+          'nafesStage1Open', 'nafesStage2Open', 'nafesStage3Open', 'nafesStage4Open',
+          'tickerCustomText', 'tickerAnnouncements'
         ]) &&
         data.announcement is string && data.announcement.size() <= 400 &&
         data.enforce24hChallengeLock is bool &&
@@ -109,8 +115,21 @@ service cloud.firestore {
         (!('unit1Open' in data) || (data.unit1Open is bool)) &&
         (!('unit2Open' in data) || (data.unit2Open is bool)) &&
         (!('unit3Open' in data) || (data.unit3Open is bool)) &&
-        (!('tickerCustomText' in data) || (data.tickerCustomText is string)) &&
-        (!('tickerAnnouncements' in data) || (data.tickerAnnouncements is list));
+        (!('gameDetectiveOpen' in data) || (data.gameDetectiveOpen is bool)) &&
+        (!('gameOrderOpen' in data) || (data.gameOrderOpen is bool)) &&
+        (!('gameMeaningOpen' in data) || (data.gameMeaningOpen is bool)) &&
+        (!('gameSpeedOpen' in data) || (data.gameSpeedOpen is bool)) &&
+        (!('platformManualStatus' in data) || (data.platformManualStatus is string && data.platformManualStatus.size() <= 20)) &&
+        (!('scheduleEnabled' in data) || (data.scheduleEnabled is bool)) &&
+        (!('scheduledOpenAt' in data) || (data.scheduledOpenAt is string && data.scheduledOpenAt.size() <= 50)) &&
+        (!('scheduledCloseAt' in data) || (data.scheduledCloseAt is string && data.scheduledCloseAt.size() <= 50)) &&
+        (!('scheduleNote' in data) || (data.scheduleNote is string && data.scheduleNote.size() <= 200)) &&
+        (!('nafesStage1Open' in data) || (data.nafesStage1Open is bool)) &&
+        (!('nafesStage2Open' in data) || (data.nafesStage2Open is bool)) &&
+        (!('nafesStage3Open' in data) || (data.nafesStage3Open is bool)) &&
+        (!('nafesStage4Open' in data) || (data.nafesStage4Open is bool)) &&
+        (!('tickerCustomText' in data) || (data.tickerCustomText is string && data.tickerCustomText.size() <= 500)) &&
+        (!('tickerAnnouncements' in data) || (data.tickerAnnouncements is list && data.tickerAnnouncements.size() <= 50));
     }
 
     function isValidFeedback(data) {

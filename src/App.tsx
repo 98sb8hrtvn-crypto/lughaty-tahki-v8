@@ -141,6 +141,7 @@ interface CloudStudentRow {
   progress: number;
   completed: string[];
   nafesStageIndex: number;
+  completedNafesStages?: string[];
   dailyCurrentIndex: number;
   dailyNextUnlockMs: number;
   lastQuizTitle: string;
@@ -171,6 +172,15 @@ interface AppSettings {
   gameOrderOpen?: boolean;
   gameMeaningOpen?: boolean;
   gameSpeedOpen?: boolean;
+  platformManualStatus?: 'open' | 'closed';
+  scheduleEnabled?: boolean;
+  scheduledOpenAt?: string;
+  scheduledCloseAt?: string;
+  scheduleNote?: string;
+  nafesStage1Open?: boolean;
+  nafesStage2Open?: boolean;
+  nafesStage3Open?: boolean;
+  nafesStage4Open?: boolean;
   tickerCustomText?: string;
   tickerAnnouncements?: TeacherAnnouncementItem[];
 }
@@ -350,6 +360,31 @@ const isGameUnlockedByTeacher = (
   return { unlocked: true };
 };
 
+// فحص قفل/فتح كل مرحلة من مراحل اختبار نافس من قبل المعلم
+const isNafesStageUnlockedByTeacher = (
+  stageId: string,
+  settings: AppSettings,
+  isTeacher?: boolean
+): { unlocked: boolean; reason?: string } => {
+  if (isTeacher) return { unlocked: true };
+  if (settings.enableNafes === false) {
+    return { unlocked: false, reason: '🔒 اختبارات نافس مقفلة بالكامل حالياً بأمر المعلم المشرف.' };
+  }
+  if (stageId === 'nafes_unit_1' && settings.nafesStage1Open === false) {
+    return { unlocked: false, reason: '🔒 المرحلة 1 من اختبار نافس مقفلة حالياً بأمر المعلم، انتظر حتى يأذن المعلم بفتحها.' };
+  }
+  if (stageId === 'nafes_unit_2' && settings.nafesStage2Open !== true) {
+    return { unlocked: false, reason: '«أحسنت! أكملت المرحلة السابقة. المرحلة التالية مغلقة حاليًا، انتظر إذن المعلم».' };
+  }
+  if (stageId === 'nafes_unit_3' && settings.nafesStage3Open !== true) {
+    return { unlocked: false, reason: '«أحسنت! أكملت المرحلة السابقة. المرحلة التالية مغلقة حاليًا، انتظر إذن المعلم».' };
+  }
+  if (stageId === 'nafes_comprehensive_4' && settings.nafesStage4Open !== true) {
+    return { unlocked: false, reason: '«أحسنت! أكملت المرحلة السابقة. المرحلة التالية مغلقة حاليًا، انتظر إذن المعلم».' };
+  }
+  return { unlocked: true };
+};
+
 const DEFAULT_SETTINGS: AppSettings = {
   announcement: 'مرحبًا بكم يا فرسان لغتي! تنافسوا في الاختبارات وتحدي الـ 24 ساعة لتتصدروا مضمار الخيل 🐎',
   enforce24hChallengeLock: true,
@@ -357,6 +392,11 @@ const DEFAULT_SETTINGS: AppSettings = {
   enableNafes: true,
   enableFeedback: true,
   adminPin: '1448',
+  platformManualStatus: 'open',
+  scheduleEnabled: false,
+  scheduledOpenAt: '',
+  scheduledCloseAt: '',
+  scheduleNote: '',
   orderUnlockAll: false,
   orderUnit1Open: true,
   orderUnit2Open: false,
@@ -368,6 +408,10 @@ const DEFAULT_SETTINGS: AppSettings = {
   gameOrderOpen: true,
   gameMeaningOpen: true,
   gameSpeedOpen: true,
+  nafesStage1Open: true,
+  nafesStage2Open: false,
+  nafesStage3Open: false,
+  nafesStage4Open: false,
   tickerCustomText: '',
   updatedAt: Date.now()
 };
@@ -459,8 +503,13 @@ export default function App() {
 
   // Admin panel active tab
   const [adminTab, setAdminTab] = useState<
-    'students' | 'challenges' | 'announcements' | 'parentMessages' | 'settings' | 'feedback'
+    'students' | 'challenges' | 'announcements' | 'parentMessages' | 'schedule' | 'nafesStages' | 'settings' | 'feedback'
   >('students');
+  const [schedOpenInput, setSchedOpenInput] = useState<string>(() => appSettings.scheduledOpenAt || '');
+  const [schedCloseInput, setSchedCloseInput] = useState<string>(() => appSettings.scheduledCloseAt || '');
+  const [schedEnabledDraft, setSchedEnabledDraft] = useState<boolean>(() => Boolean(appSettings.scheduleEnabled));
+  const [schedNoteDraft, setSchedNoteDraft] = useState<string>(() => appSettings.scheduleNote || '');
+  const [scheduleActionFeedback, setScheduleActionFeedback] = useState<string | null>(null);
   // New Custom Challenge Form in Admin
   const [newChDay, setNewChDay] = useState<number>(11);
   const [newChLevel, setNewChLevel] = useState<DailyChallengeItem['level']>('صعب جدًا');
@@ -585,6 +634,15 @@ export default function App() {
     }
   });
 
+  // مؤقت الوقت الفعلي لمتابعة مواعيد المنصة والجدولة الزمنية
+  const [clockDate, setClockDate] = useState<Date>(() => new Date());
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setClockDate(new Date());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
   const currentProfile = activeId && profiles[activeId] ? profiles[activeId] : null;
   const studentMistakes = currentProfile?.mistakes || [];
   const isTeacherAdmin =
@@ -592,58 +650,124 @@ export default function App() {
     Boolean(firebaseUser?.email && firebaseUser.email.toLowerCase() === ADMIN_EMAIL.toLowerCase());
 
   // =========================================================================
-  // مواعيد فتح وإغلاق المنصة الرسمية: تفتح 2:00 ظهراً (14:00) وتغلق 9:00 مساءً (21:00)
-  // مع وصف ورموز مناسبة وتايمر عداد تنازلي للوقت
+  // نظام مواعيد المنصة وصلاحيات فتح وإغلاق المنصة — تحكم كامل للمعلم
+  // أولوية التحكم اليدوي المباشر، مع خيار الجدولة التلقائية
   // =========================================================================
-  const [clockDate, setClockDate] = useState<Date>(() => new Date());
-  const [closedNoticeDismissed, setClosedNoticeDismissed] = useState<boolean>(false);
-
-  useEffect(() => {
-    const clockTimer = setInterval(() => {
-      setClockDate(new Date());
-    }, 1000);
-    return () => clearInterval(clockTimer);
-  }, []);
-
   const scheduleInfo = useMemo(() => {
-    const hours = clockDate.getHours();
-    const minutes = clockDate.getMinutes();
-    const currentMins = hours * 60 + minutes;
+    const now = clockDate.getTime();
 
-    // المواعيد المحددة: تفتح 2:00 ظهراً (14:00) وتغلق 9:00 مساءً (21:00)
-    const openMins = 14 * 60; // 840 دقيقة
-    const closeMins = 21 * 60; // 1260 دقيقة
-    const isOpen = currentMins >= openMins && currentMins < closeMins;
+    // 1. في حال تشغيل الجدولة التلقائية من قِبل المعلم
+    if (appSettings.scheduleEnabled) {
+      const openTime = appSettings.scheduledOpenAt ? new Date(appSettings.scheduledOpenAt).getTime() : NaN;
+      const closeTime = appSettings.scheduledCloseAt ? new Date(appSettings.scheduledCloseAt).getTime() : NaN;
 
-    const targetDate = new Date(clockDate);
-    if (isOpen) {
-      targetDate.setHours(21, 0, 0, 0);
-    } else {
-      if (currentMins < openMins) {
-        targetDate.setHours(14, 0, 0, 0);
+      let isOpen = false;
+      let targetDate: Date | null = null;
+      let timerLabel = '';
+
+      if (!isNaN(openTime) && !isNaN(closeTime)) {
+        if (now >= openTime && now < closeTime) {
+          isOpen = true;
+          targetDate = new Date(closeTime);
+          timerLabel = 'متبقي على موعد إغلاق المنصة المجدول:';
+        } else if (now < openTime) {
+          isOpen = false;
+          targetDate = new Date(openTime);
+          timerLabel = 'متبقي على موعد فتح المنصة المجدول:';
+        } else {
+          // بعد انتهاء الفترة المجدولة
+          isOpen = false;
+          timerLabel = 'انتهت الفترة المجدولة (المنصة مغلقة حالياً)';
+        }
+      } else if (!isNaN(openTime) && now < openTime) {
+        isOpen = false;
+        targetDate = new Date(openTime);
+        timerLabel = 'متبقي على موعد فتح المنصة:';
+      } else if (!isNaN(closeTime) && now < closeTime) {
+        isOpen = true;
+        targetDate = new Date(closeTime);
+        timerLabel = 'متبقي على موعد إغلاق المنصة:';
       } else {
-        targetDate.setDate(targetDate.getDate() + 1);
-        targetDate.setHours(14, 0, 0, 0);
+        isOpen = appSettings.platformManualStatus !== 'closed';
       }
+
+      let timerString = '';
+      if (targetDate) {
+        const diffMs = Math.max(0, targetDate.getTime() - now);
+        const totalSecs = Math.floor(diffMs / 1000);
+        const hrs = Math.floor(totalSecs / 3600);
+        const mins = Math.floor((totalSecs % 3600) / 60);
+        const secs = totalSecs % 60;
+        const pad = (n: number) => n.toString().padStart(2, '0');
+        timerString = `${pad(hrs)}:${pad(mins)}:${pad(secs)}`;
+      }
+
+      return {
+        isOpen,
+        isScheduled: true,
+        statusLabel: isOpen ? 'مفتوحة (ضمن الجدول المعتمد)' : 'مغلقة (خارج الجدول المعتمد)',
+        timerString,
+        timerLabel,
+        openAtText: appSettings.scheduledOpenAt ? new Date(appSettings.scheduledOpenAt).toLocaleString('ar-SA') : '',
+        closeAtText: appSettings.scheduledCloseAt ? new Date(appSettings.scheduledCloseAt).toLocaleString('ar-SA') : '',
+        message: isOpen
+          ? '🏇 المنصة مفتوحة ومتاحة الآن للتنافس وإنجاز التحديات والاختبارات!'
+          : '🌙 المنصة مغلقة حاليًا خارج أوقات العمل المجدولة.'
+      };
     }
 
-    const diffMs = Math.max(0, targetDate.getTime() - clockDate.getTime());
-    const totalSecs = Math.floor(diffMs / 1000);
-    const hrs = Math.floor(totalSecs / 3600);
-    const mins = Math.floor((totalSecs % 3600) / 60);
-    const secs = totalSecs % 60;
-
-    const pad = (n: number) => n.toString().padStart(2, '0');
-    const timerString = `${pad(hrs)}:${pad(mins)}:${pad(secs)}`;
-
+    // 2. التحكم اليدوي المباشر المعتمد (المعلم يفتح أو يغلق متى يشاء)
+    const isOpen = appSettings.platformManualStatus !== 'closed';
     return {
       isOpen,
-      timerString,
-      hours: hrs,
-      minutes: mins,
-      seconds: secs
+      isScheduled: false,
+      statusLabel: isOpen ? 'مفتوحة بقرار المعلم' : 'مغلقة بقرار المعلم',
+      timerString: '',
+      timerLabel: isOpen ? 'المنصة متاحة الآن بقرار المعلم' : 'المنصة مغلقة حالياً بقرار المعلم',
+      openAtText: '',
+      closeAtText: '',
+      message: isOpen
+        ? '🏇 المنصة مفتوحة ومتاحة الآن لجميع فرسان لغتي الخالدة بإذن المعلم المشرف.'
+        : '🔒 المنصة مغلقة حالياً بقرار المعلم المشرف (أ. مساعد الصخري). انتظر إذن المعلم للفتح.'
     };
-  }, [clockDate]);
+  }, [clockDate, appSettings]);
+
+  // =========================================================================
+  // سجل احتساب النقاط (QUESTION SCORING LEDGER) — القواعد الأربع الملزمة
+  // نقطة واحدة فقط لكل سؤال عن أول إجابة صحيحة داخل المجموعة، بدون تكرار
+  // =========================================================================
+  const getStudentScoredLedger = (studentId: string): Set<string> => {
+    if (!studentId) return new Set();
+    const key = `LT_SCORED_LEDGER_${studentId}`;
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) return new Set(arr);
+      }
+    } catch {}
+    return new Set();
+  };
+
+  const recordQuestionScore = (
+    studentId: string,
+    groupId: string,
+    questionPrompt: string
+  ): boolean => {
+    if (!studentId || !groupId || !questionPrompt) return false;
+    const cleanQ = questionPrompt.trim().slice(0, 120);
+    const qKey = `${groupId}:::${cleanQ}`;
+    const ledger = getStudentScoredLedger(studentId);
+    if (ledger.has(qKey)) {
+      // سبق احتساب هذا السؤال لهذا الطالب داخل هذه المجموعة
+      return false;
+    }
+    ledger.add(qKey);
+    try {
+      localStorage.setItem(`LT_SCORED_LEDGER_${studentId}`, JSON.stringify(Array.from(ledger)));
+    } catch {}
+    return true; // أول إجابة صحيحة محتسبة داخل المجموعة (تمنح +1 نقطة)
+  };
 
   // Combine default progression + teacher's custom challenges from Firestore
   const allDailyChallenges: DailyChallengeItem[] = [
@@ -770,6 +894,11 @@ export default function App() {
           const merged: AppSettings = {
             ...DEFAULT_SETTINGS,
             ...data,
+            platformManualStatus: (data.platformManualStatus as any) || 'open',
+            scheduleEnabled: Boolean(data.scheduleEnabled),
+            scheduledOpenAt: data.scheduledOpenAt || '',
+            scheduledCloseAt: data.scheduledCloseAt || '',
+            scheduleNote: data.scheduleNote || '',
             unit1Open: data.unit1Open !== false,
             unit2Open: Boolean(data.unit2Open),
             unit3Open: Boolean(data.unit3Open),
@@ -780,6 +909,10 @@ export default function App() {
             gameOrderOpen: data.gameOrderOpen !== false,
             gameMeaningOpen: data.gameMeaningOpen !== false,
             gameSpeedOpen: data.gameSpeedOpen !== false,
+            nafesStage1Open: data.nafesStage1Open !== false,
+            nafesStage2Open: Boolean(data.nafesStage2Open),
+            nafesStage3Open: Boolean(data.nafesStage3Open),
+            nafesStage4Open: Boolean(data.nafesStage4Open),
             tickerCustomText: data.tickerCustomText || '',
             tickerAnnouncements: Array.isArray(data.tickerAnnouncements) ? data.tickerAnnouncements : []
           };
@@ -961,7 +1094,7 @@ export default function App() {
 
   const handleAnswerDailyChallenge = (optIdx: number) => {
     if (!scheduleInfo.isOpen && !isTeacherAdmin) {
-      showNotice('⏰ المنصة مغلقة حاليًا خارج أوقات العمل الرسمية (ساعات التنافس الرسمية: من الساعة 2:00 ظهراً وحتى 9:00 مساءً). موعدنا معكم اليوم في تمام الثانية ظهراً!');
+      showNotice(scheduleInfo.message || '🔒 المنصة مغلقة حاليًا بقرار المعلم المشرف (أ. مساعد الصخري). انتظر إذن المعلم للفتح.');
       return;
     }
     if (dailySolvedTime !== null || dailyWrongChoices.includes(optIdx)) return;
@@ -1291,13 +1424,13 @@ export default function App() {
     nafesStageId?: string,
     nafesStageIdx?: number
   ) => {
-    // التحقق من مواعيد عمل المنصة الرسمية (من 2:00 ظهراً إلى 9:00 مساءً)
+    // التحقق من مواعيد عمل المنصة بقرار المعلم المشرف
     if (!scheduleInfo.isOpen && !isTeacherAdmin) {
-      showNotice('⏰ المنصة مغلقة حاليًا خارج أوقات العمل الرسمية (ساعات التنافس الرسمية: من الساعة 2:00 ظهراً وحتى 9:00 مساءً). استعد وتدرب وسنلتقي بكم في تمام الثانية ظهراً!');
+      showNotice(scheduleInfo.message || '🔒 المنصة مغلقة حاليًا بقرار المعلم المشرف (أ. مساعد الصخري). انتظر إذن المعلم للفتح.');
       return;
     }
 
-    // التحقق الصارم من قفل المعلم للوحدات: لا يستطيع الطالب تجاوز القفل أبداً إلا إذا سمح المعلم بفتحها
+    // التحقق الصارم من قفل المعلم للوحدات ومراحل نافس
     if (!isTeacherAdmin) {
       if ((title.includes('الوحدة 1') || type.includes('الوحدة 1')) && appSettings.unit1Open === false) {
         showNotice('🔒 أسئلة الوحدة الأولى مقفلة حالياً بأمر المعلم (أ. مساعد الصخري)، ولا يمكن للطالب تجاوز القفل أبداً إلا بعد فتحها من قِبل المعلم.');
@@ -1310,6 +1443,13 @@ export default function App() {
       if ((title.includes('الوحدة 3') || type.includes('الوحدة 3')) && !appSettings.unit3Open) {
         showNotice('🔒 أسئلة الوحدة الثالثة مقفلة حالياً بأمر المعلم (أ. مساعد الصخري)، ولا يمكن للطالب تجاوز القفل أبداً إلا بعد فتحها من قِبل المعلم.');
         return;
+      }
+      if (nafesStageId) {
+        const nafesLock = isNafesStageUnlockedByTeacher(nafesStageId, appSettings, isTeacherAdmin);
+        if (!nafesLock.unlocked) {
+          showNotice(nafesLock.reason || '🔒 هذه المرحلة من اختبار نافس مقفلة حالياً بأمر المعلم (أ. مساعد الصخري).');
+          return;
+        }
       }
     }
 
@@ -1395,6 +1535,15 @@ export default function App() {
 
   const launchNafesStage = (stage: NafesStageExam, idx: number) => {
     if (!needProfile()) return;
+    if (!scheduleInfo.isOpen && !isTeacherAdmin) {
+      showNotice(scheduleInfo.message || '🔒 المنصة مغلقة حاليًا بقرار المعلم المشرف (أ. مساعد الصخري). انتظر إذن المعلم للفتح.');
+      return;
+    }
+    const stageLock = isNafesStageUnlockedByTeacher(stage.id, appSettings, isTeacherAdmin);
+    if (!stageLock.unlocked) {
+      showNotice(stageLock.reason || '🔒 هذه المرحلة من اختبار نافس لم تُفتح بعد من قِبل المعلم (أ. مساعد الصخري).');
+      return;
+    }
     // Prevent returning to an already-completed Nafes exam unless teacher/admin
     if (completedNafesStages.includes(stage.id) && !isTeacherAdmin) {
       showNotice(
@@ -1603,8 +1752,18 @@ export default function App() {
         nextBadges.push('صنديد نافس الذهبي');
       }
 
-      // احتساب نقطة واحدة فقط لكل سؤال صحيح استجابة لطلب المعلم
-      const earnedPoints = score;
+      // احتساب نقطة واحدة فقط لكل سؤال صحيح لأول مرة (منع تكرار احتساب النقاط عند إعادة الاختبار)
+      let newlyEarnedPoints = 0;
+      quiz.qs.forEach((q, qIndex) => {
+        const userAns = userAnswers[qIndex];
+        if (userAns && userAns.isCorrect) {
+          const isFirstCorrect = recordQuestionScore(activeId || p.code, quiz.title, q[0]);
+          if (isFirstCorrect) {
+            newlyEarnedPoints += 1;
+          }
+        }
+      });
+      const earnedPoints = newlyEarnedPoints;
       const newPoints = p.points + earnedPoints;
       if (newPoints >= 10 && !nextBadges.some(b => b.includes('فارس منطلق'))) nextBadges.push('رتبة: فارس منطلق');
       if (newPoints >= 25 && !nextBadges.some(b => b.includes('فارس مقدام'))) nextBadges.push('رتبة: فارس مقدام');
@@ -1789,7 +1948,7 @@ export default function App() {
   // 1. المحقق اللغوي (Detective) — أسئلة دروس الوحدات المفتوحة فقط
   const startDetective = () => {
     if (!scheduleInfo.isOpen && !isTeacherAdmin) {
-      showNotice('⏰ المنصة مغلقة حاليًا خارج أوقات العمل الرسمية (ساعات التنافس الرسمية: من الساعة 2:00 ظهراً وحتى 9:00 مساءً). استعد وتدرب وسنلتقي بكم في تمام الثانية ظهراً!');
+      showNotice(scheduleInfo.message || '🔒 المنصة مغلقة حاليًا بقرار المعلم المشرف (أ. مساعد الصخري). انتظر إذن المعلم للفتح.');
       return;
     }
     const teacherLock = isGameUnlockedByTeacher('detective', appSettings, isTeacherAdmin);
@@ -1832,7 +1991,14 @@ export default function App() {
     if (detSelected !== null || !gameDetectiveList[detIndex]) return;
     setDetSelected(j);
     const isCorrect = j === gameDetectiveList[detIndex].answer;
-    if (isCorrect) setDetScore(s => s + 1);
+    if (isCorrect) {
+      setDetScore(s => s + 1);
+      // نقطة واحدة فقط لكل سؤال صحيح لأول مرة (بدون تكرار)
+      const isNew = recordQuestionScore(activeId, 'game_detective', gameDetectiveList[detIndex].prompt);
+      if (isNew) {
+        addPoints(1);
+      }
+    }
   };
 
   const nextDetective = () => {
@@ -1841,8 +2007,6 @@ export default function App() {
       setDetSelected(null);
     } else {
       setDetDone(true);
-      // نقطة واحدة لكل سؤال صحيح في لعبة المحقق اللغوي
-      addPoints(detScore);
       if (detScore === gameDetectiveList.length && gameDetectiveList.length > 0) {
         updateCurrentProfile(p => {
           if (!p.badges.includes('محقق الضاد البارع')) {
@@ -1952,7 +2116,7 @@ export default function App() {
 
   const checkOrderGame = () => {
     if (!scheduleInfo.isOpen && !isTeacherAdmin) {
-      showNotice('⏰ المنصة مغلقة حاليًا خارج أوقات العمل الرسمية (ساعات التنافس الرسمية: من الساعة 2:00 ظهراً وحتى 9:00 مساءً). استعد وتدرب وسنلتقي بكم في تمام الثانية ظهراً!');
+      showNotice(scheduleInfo.message || '🔒 المنصة مغلقة حاليًا بقرار المعلم المشرف (أ. مساعد الصخري). انتظر إذن المعلم للفتح.');
       return;
     }
     const currentQ = gameOrderList[gameOrderActiveIdx];
@@ -1960,8 +2124,11 @@ export default function App() {
     const target = currentQ.words.join(' ');
     const sentence = orderChosen.map(i => orderWords[i]).join(' ');
     if (sentence === target) {
-      // نقطة واحدة لكل سؤال استجابة لطلب المعلم
-      addPoints(1);
+      // نقطة واحدة لكل سؤال صحيح لأول مرة استجابة لطلب المعلم (بدون تكرار النقاط)
+      const isNew = recordQuestionScore(activeId, 'game_order', target);
+      if (isNew) {
+        addPoints(1);
+      }
 
       // Save unit progress and check for unlocking next unit
       const progress = getOrderGameProgress(activeId);
@@ -1998,13 +2165,13 @@ export default function App() {
         showNotice(celebration);
       } else {
         const ruleHint = currentQ.ruleExplanation ? ` (${currentQ.ruleExplanation})` : '';
-        showNotice(`⭐ رائع ومتقن! ترتيب صحيح (+20 نقطة) — [جملة ${nextSessionCount}/5 لمحاولة اليوم]${ruleHint}`);
+        showNotice(`⭐ رائع ومتقن! ترتيب صحيح (+1 نقطة) — [جملة ${nextSessionCount}/5 لمحاولة اليوم]${ruleHint}`);
       }
 
       if (nextSessionCount >= 5) {
         setOrderDone(true);
         fireCelebratoryFireworks();
-        showNotice('🎉 أداء بطولي! أتممت بنجاح الجمل الخمس لمحاولة اليوم في تركيب الجمل (+100 نقطة)! ستتاح محاولتك القادمة بعد 24 ساعة.');
+        showNotice('🎉 أداء بطولي! أتممت بنجاح الجمل الخمس لمحاولة اليوم في تركيب الجمل (+5 نقاط بواقع نقطة لكل جملة)! ستتاح محاولتك القادمة بعد 24 ساعة.');
       } else {
         setTimeout(() => {
           nextOrderSentence();
@@ -2017,6 +2184,10 @@ export default function App() {
 
   // 3. معنى الكلمة (Meaning) — مفردات نصوص الوحدات المفتوحة فقط
   const startMeaning = () => {
+    if (!scheduleInfo.isOpen && !isTeacherAdmin) {
+      showNotice(scheduleInfo.message || '🔒 المنصة مغلقة حاليًا بقرار المعلم المشرف (أ. مساعد الصخري). انتظر إذن المعلم للفتح.');
+      return;
+    }
     const teacherLock = isGameUnlockedByTeacher('meaning', appSettings, isTeacherAdmin);
     if (!teacherLock.unlocked) {
       showNotice(teacherLock.reason || '🔒 أسئلة لعبة «معنى الكلمة» مقفلة حالياً بأمر المعلم ولا يمكن تجاوز القفل!');
@@ -2060,6 +2231,11 @@ export default function App() {
     const nextScore = isCorrect ? meanScore + 1 : meanScore;
     if (isCorrect) {
       showNotice('أحسنت! معنى دقيق وصحيح ✅');
+      // نقطة واحدة فقط لكل سؤال صحيح لأول مرة (بدون تكرار)
+      const isNew = recordQuestionScore(activeId, 'game_meaning', currentQ.word);
+      if (isNew) {
+        addPoints(1);
+      }
     }
 
     if (meanIndex + 1 < gameMeaningList.length) {
@@ -2070,8 +2246,6 @@ export default function App() {
     } else {
       setMeanScore(nextScore);
       setMeanDone(true);
-      // نقطة واحدة لكل سؤال صحيح في لعبة معاني الكلمات
-      addPoints(nextScore);
       if (nextScore >= 4) {
         updateCurrentProfile(p => {
           if (!p.badges.includes('خازن المعاجم والمفردات')) {
@@ -2088,7 +2262,7 @@ export default function App() {
   // 4. تحدي السرعة (Speed Challenge) — أسئلة دروس الوحدات المفتوحة فقط
   const startSpeed = () => {
     if (!scheduleInfo.isOpen && !isTeacherAdmin) {
-      showNotice('⏰ المنصة مغلقة حاليًا خارج أوقات العمل الرسمية (ساعات التنافس الرسمية: من الساعة 2:00 ظهراً وحتى 9:00 مساءً). استعد وتدرب وسنلتقي بكم في تمام الثانية ظهراً!');
+      showNotice(scheduleInfo.message || '🔒 المنصة مغلقة حاليًا بقرار المعلم المشرف (أ. مساعد الصخري). انتظر إذن المعلم للفتح.');
       return;
     }
     const teacherLock = isGameUnlockedByTeacher('speed', appSettings, isTeacherAdmin);
@@ -2133,8 +2307,6 @@ export default function App() {
           if (speedTimerRef.current) clearInterval(speedTimerRef.current);
           setSpeedDone(true);
           setSpeedScore(currentScore => {
-            // نقطة واحدة فقط لكل سؤال صحيح استجابة لطلب المعلم
-            if (currentScore > 0) addPoints(currentScore);
             if (currentScore >= 6) {
               updateCurrentProfile(p => {
                 if (!p.badges.includes('فارس السرعة الخاطفة')) {
@@ -2158,6 +2330,13 @@ export default function App() {
     if (!currentQ) return;
     const isCorrect = j === currentQ.answer;
     const nextScore = isCorrect ? speedScore + 1 : speedScore;
+    if (isCorrect) {
+      // نقطة واحدة فقط لكل سؤال صحيح لأول مرة استجابة لطلب المعلم (بدون تكرار)
+      const isNew = recordQuestionScore(activeId, 'game_speed', currentQ.prompt);
+      if (isNew) {
+        addPoints(1);
+      }
+    }
 
     if (speedIndex + 1 < gameSpeedList.length) {
       setSpeedScore(nextScore);
@@ -2166,8 +2345,6 @@ export default function App() {
       if (speedTimerRef.current) clearInterval(speedTimerRef.current);
       setSpeedScore(nextScore);
       setSpeedDone(true);
-      // نقطة واحدة فقط لكل سؤال صحيح استجابة لطلب المعلم
-      addPoints(nextScore);
       if (nextScore >= 6) {
         updateCurrentProfile(p => {
           if (!p.badges.includes('فارس السرعة الخاطفة')) {
@@ -2179,7 +2356,6 @@ export default function App() {
         showNotice('⚡ إنجاز استثنائي خاطف! نلت لقب «فارس السرعة الخاطفة» لإحرازك 6 إجابات صحيحة في 30 ثانية!');
       }
     }
-
   };
 
   const handleSendFeedback = async () => {
@@ -2238,6 +2414,11 @@ export default function App() {
       enableNafes: Boolean(updated.enableNafes),
       enableFeedback: Boolean(updated.enableFeedback),
       adminPin: (updated.adminPin || '1448').slice(0, 12),
+      platformManualStatus: updated.platformManualStatus || 'open',
+      scheduleEnabled: Boolean(updated.scheduleEnabled),
+      scheduledOpenAt: (updated.scheduledOpenAt || '').slice(0, 50),
+      scheduledCloseAt: (updated.scheduledCloseAt || '').slice(0, 50),
+      scheduleNote: (updated.scheduleNote || '').slice(0, 200),
       orderUnlockAll: Boolean(updated.orderUnlockAll),
       orderUnit1Open: updated.orderUnit1Open !== false,
       orderUnit2Open: Boolean(updated.orderUnit2Open),
@@ -2249,7 +2430,11 @@ export default function App() {
       gameOrderOpen: updated.gameOrderOpen !== false,
       gameMeaningOpen: updated.gameMeaningOpen !== false,
       gameSpeedOpen: updated.gameSpeedOpen !== false,
-      tickerCustomText: (updated.tickerCustomText || '').slice(0, 400),
+      nafesStage1Open: updated.nafesStage1Open !== false,
+      nafesStage2Open: Boolean(updated.nafesStage2Open),
+      nafesStage3Open: Boolean(updated.nafesStage3Open),
+      nafesStage4Open: Boolean(updated.nafesStage4Open),
+      tickerCustomText: (updated.tickerCustomText || '').slice(0, 500),
       tickerAnnouncements: (updated.tickerAnnouncements || []).map(a => ({
         id: a.id,
         text: a.text.slice(0, 400),
@@ -2265,7 +2450,7 @@ export default function App() {
         localStorage.setItem('LT_GLOBAL_SETTINGS', JSON.stringify(payload));
       } catch {}
       await setDoc(doc(db, 'app_settings', 'global'), payload);
-      showNotice('✅ تم حفظ إعدادات التطبيق وصلاحيات الوحدات والألعاب بنجاح!');
+      showNotice('✅ تم حفظ الإعدادات وتحديث الصلاحيات سحابياً بنجاح!');
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, 'app_settings/global');
     }
@@ -2442,6 +2627,109 @@ export default function App() {
       open
         ? '🔓 تم الإذن بفتح جميع ألعاب مركز الألعاب اللغوية (4 ألعاب) لجميع الطلاب بنجاح!'
         : '🔒 تم إقفال جميع ألعاب مركز الألعاب اللغوية بأمر المعلم، ولن يتمكن الطلاب من تجاوز القفل.'
+    );
+  };
+
+  const handlePlatformOpenNow = async () => {
+    if (!isTeacherAdmin) return showNotice('هذا الإجراء مخصص للمعلم المشرف فقط.');
+    const updated: AppSettings = {
+      ...appSettings,
+      platformManualStatus: 'open',
+      scheduleEnabled: false,
+      updatedAt: Date.now()
+    };
+    setAppSettings(updated);
+    setSchedEnabledDraft(false);
+    await handleSaveSettingsToCloud(updated);
+    showNotice('🟢 تم فتح المنصة فوراً لجميع الطلاب بإذن المعلم المشرف (أ. مساعد الصخري)!');
+  };
+
+  const handlePlatformCloseNow = async () => {
+    if (!isTeacherAdmin) return showNotice('هذا الإجراء مخصص للمعلم المشرف فقط.');
+    const updated: AppSettings = {
+      ...appSettings,
+      platformManualStatus: 'closed',
+      scheduleEnabled: false,
+      updatedAt: Date.now()
+    };
+    setAppSettings(updated);
+    setSchedEnabledDraft(false);
+    await handleSaveSettingsToCloud(updated);
+    showNotice('🔒 تم إغلاق المنصة فوراً لجميع الطلاب بقرار المعلم المشرف.');
+  };
+
+  const handleSavePlatformSchedule = async () => {
+    if (!isTeacherAdmin) return showNotice('هذا الإجراء مخصص للمعلم المشرف فقط.');
+    if (schedEnabledDraft && (!schedOpenInput || !schedCloseInput)) {
+      showNotice('يرجى تحديد وقت وتاريخ الفتح المجدول ووقت وتاريخ الإغلاق المجدول بدقة.');
+      return;
+    }
+    const updated: AppSettings = {
+      ...appSettings,
+      scheduleEnabled: schedEnabledDraft,
+      scheduledOpenAt: schedOpenInput,
+      scheduledCloseAt: schedCloseInput,
+      updatedAt: Date.now()
+    };
+    setAppSettings(updated);
+    await handleSaveSettingsToCloud(updated);
+    showNotice(
+      schedEnabledDraft
+        ? '✅ تم حفظ وتفعيل جدول مواعيد المنصة بنجاح في قاعدة البيانات السحابية!'
+        : '✅ تم حفظ التعديل بنجاح مع الاعتماد على التحكم اليدوي المباشر.'
+    );
+  };
+
+  const handleCancelPlatformSchedule = async () => {
+    if (!isTeacherAdmin) return showNotice('هذا الإجراء مخصص للمعلم المشرف فقط.');
+    setSchedOpenInput('');
+    setSchedCloseInput('');
+    setSchedEnabledDraft(false);
+    const updated: AppSettings = {
+      ...appSettings,
+      scheduleEnabled: false,
+      scheduledOpenAt: '',
+      scheduledCloseAt: '',
+      updatedAt: Date.now()
+    };
+    setAppSettings(updated);
+    await handleSaveSettingsToCloud(updated);
+    showNotice('❌ تم إلغاء الجدول الزمني والاعتماد على التحكم اليدوي المباشر للمعلم.');
+  };
+
+  const handleToggleNafesStage = async (stageNumber: 1 | 2 | 3 | 4, open: boolean) => {
+    if (!isTeacherAdmin) return showNotice('هذا الإجراء مخصص للمعلم المشرف فقط.');
+    const key = stageNumber === 1 ? 'nafesStage1Open' : stageNumber === 2 ? 'nafesStage2Open' : stageNumber === 3 ? 'nafesStage3Open' : 'nafesStage4Open';
+    const updated: AppSettings = {
+      ...appSettings,
+      [key]: open,
+      updatedAt: Date.now()
+    };
+    setAppSettings(updated);
+    await handleSaveSettingsToCloud(updated);
+    showNotice(
+      open
+        ? `🔓 تم الإذن بفتح المرحلة ${stageNumber} من اختبار نافس للطلاب بنجاح!`
+        : `🔒 تم إغلاق المرحلة ${stageNumber} من اختبار نافس عن الطلاب.`
+    );
+  };
+
+  const handleSetAllNafesStages = async (open: boolean) => {
+    if (!isTeacherAdmin) return showNotice('هذا الإجراء مخصص للمعلم المشرف فقط.');
+    const updated: AppSettings = {
+      ...appSettings,
+      nafesStage1Open: open,
+      nafesStage2Open: open,
+      nafesStage3Open: open,
+      nafesStage4Open: open,
+      updatedAt: Date.now()
+    };
+    setAppSettings(updated);
+    await handleSaveSettingsToCloud(updated);
+    showNotice(
+      open
+        ? '🔓 تم فتح جميع مراحل اختبار نافس (المراحل 1 - 4) لجميع الطلاب فوراً!'
+        : '🔒 تم إغلاق جميع مراحل اختبار نافس.'
     );
   };
 
@@ -2982,23 +3270,41 @@ export default function App() {
       });
     }
 
-    // 7. الطلاب الحاصلون على ألقاب وشارات مميزة
-    leaderboardStudents.slice(0, 8).forEach(st => {
+    // 7. الطلاب الحاصلون على ألقاب وشارات مميزة — جمع الإنجازات بصيغة محفزة ومختصرة دون تكرار الاسم
+    leaderboardStudents.slice(0, 10).forEach(st => {
       const badges = Array.isArray(st.badges) ? st.badges : [];
+      if (badges.length === 0) return;
+
+      const titleNames: string[] = [];
       badges.forEach(b => {
         const matchingTitle = MOTIVATIONAL_TITLES.find(
           t => t.badgeKey === b || b.includes(t.badgeKey) || t.name.includes(b)
         );
-        if (matchingTitle && !items.some(it => it.id.includes(b) && it.text.includes(st.name))) {
-          items.push({
-            id: `badge_${st.profileId}_${b}`,
-            icon: matchingTitle.icon || '🏅',
-            type: 'badge',
-            text: `الفارس ${st.name} (فصل ${st.cls})`,
-            highlight: `نال وسام «${matchingTitle.name}»`
-          });
+        const nameToAdd = matchingTitle ? matchingTitle.name : b;
+        if (!titleNames.includes(nameToAdd)) {
+          titleNames.push(nameToAdd);
         }
       });
+
+      if (titleNames.length === 1) {
+        items.push({
+          id: `badge_group_${st.profileId}`,
+          icon: '🎖️',
+          type: 'badge',
+          text: `مبارك للفارس ${st.name} (فصل ${st.cls})`,
+          highlight: `حصوله على وسام «${titleNames[0]}»`
+        });
+      } else if (titleNames.length > 1) {
+        const displayed = titleNames.slice(0, 3).map(n => `«${n}»`).join(' و');
+        const remaining = titleNames.length > 3 ? ` و${titleNames.length - 3} أوسمة أخرى` : '';
+        items.push({
+          id: `badge_group_${st.profileId}`,
+          icon: '🌟',
+          type: 'badge',
+          text: `مبارك للفارس ${st.name} (فصل ${st.cls})`,
+          highlight: `تألقه بحصوله على ${titleNames.length} أوسمة: ${displayed}${remaining}`
+        });
+      }
     });
 
     if (items.length < 5) {
@@ -3209,12 +3515,20 @@ export default function App() {
                       marginTop: 2
                     }}
                   >
-                    ⏰ <b>ساعات التنافس الرسمية:</b> تفتح المنصة يومياً في تمام الساعة <b>2:00 ظهراً</b> وتغلق في تمام الساعة <b>9:00 مساءً</b> (بتوقيت المملكة 🇸🇦).
+                    {scheduleInfo.isScheduled ? (
+                      <>
+                        ⏰ <b>الجدول الزمني المعتمد:</b> الفتح: <b>{scheduleInfo.openAtText || '—'}</b> • الإغلاق: <b>{scheduleInfo.closeAtText || '—'}</b>
+                      </>
+                    ) : (
+                      <>
+                        👨‍🏫 <b>نظام تحكم المعلم المشرف (أ. مساعد الصخري):</b> {scheduleInfo.message}
+                      </>
+                    )}
                   </span>
                 </div>
               </div>
 
-              {/* العداد التنازلي التفاعلي المباشر للوقت */}
+              {/* مؤشر الوقت أو العداد التنازلي التفاعلي المباشر للجدولة */}
               <div
                 style={{
                   display: 'inline-flex',
@@ -3227,7 +3541,7 @@ export default function App() {
                   boxShadow: '0 2px 8px rgba(0,0,0,0.06)'
                 }}
               >
-                <span style={{ fontSize: 22 }}>⏳</span>
+                <span style={{ fontSize: 22 }}>{scheduleInfo.isScheduled ? '⏳' : '🔑'}</span>
                 <div style={{ textAlign: 'center' }}>
                   <small
                     style={{
@@ -3237,18 +3551,22 @@ export default function App() {
                       color: scheduleInfo.isOpen ? '#065f46' : '#9a3412'
                     }}
                   >
-                    {scheduleInfo.isOpen ? 'متبقي على إغلاق المنصة اليوم:' : 'متبقي على موعد فتح المنصة:'}
+                    {scheduleInfo.isScheduled
+                      ? scheduleInfo.timerLabel || (scheduleInfo.isOpen ? 'متبقي على إغلاق المنصة:' : 'متبقي على موعد فتح المنصة:')
+                      : 'التحكم المعتمد:'}
                   </small>
                   <span
                     style={{
-                      fontFamily: 'monospace',
-                      fontSize: 18,
+                      fontFamily: scheduleInfo.isScheduled ? 'monospace' : 'inherit',
+                      fontSize: scheduleInfo.isScheduled ? 18 : 13,
                       fontWeight: 900,
                       color: scheduleInfo.isOpen ? '#047857' : '#c2410c',
-                      letterSpacing: 1.5
+                      letterSpacing: scheduleInfo.isScheduled ? 1.5 : 'normal'
                     }}
                   >
-                    {scheduleInfo.timerString}
+                    {scheduleInfo.isScheduled
+                      ? scheduleInfo.timerString || '00:00:00'
+                      : scheduleInfo.isOpen ? 'مفتوحة بإذن المعلم 🟢' : 'مغلقة بقرار المعلم 🔴'}
                   </span>
                 </div>
               </div>
@@ -4700,19 +5018,25 @@ export default function App() {
             <div style={{ display: 'grid', gap: 12 }}>
               {NAFES_STAGES.map((stg, idx) => {
                 const isCompleted = completedNafesStages.includes(stg.id);
-                const isUnlocked = idx <= currentNafesStageIdx || isTeacherAdmin;
+                const teacherLock = isNafesStageUnlockedByTeacher(stg.id, appSettings, isTeacherAdmin);
+                const isUnlockedByProgress = idx <= currentNafesStageIdx || isTeacherAdmin;
                 const isCurrentNext = idx === currentNafesStageIdx && !isCompleted;
+                const canLaunch = teacherLock.unlocked && isUnlockedByProgress;
 
                 return (
                   <div
                     key={stg.id}
                     style={{
-                      border: isCurrentNext
+                      border: !teacherLock.unlocked
+                        ? '1.5px solid #fca5a5'
+                        : isCurrentNext
                         ? '2px solid #e59812'
                         : isCompleted
                         ? '2px solid #299d82'
                         : '1px solid #d6e7e5',
-                      background: isCompleted
+                      background: !teacherLock.unlocked
+                        ? '#fff5f5'
+                        : isCompleted
                         ? '#f2fbf7'
                         : isCurrentNext
                         ? '#fffdf5'
@@ -4724,26 +5048,30 @@ export default function App() {
                       alignItems: 'center',
                       flexWrap: 'wrap',
                       gap: 12,
-                      opacity: isUnlocked ? 1 : 0.65
+                      opacity: canLaunch || isCompleted ? 1 : 0.75
                     }}
                   >
                     <div style={{ flex: 1, minWidth: 240 }}>
                       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4 }}>
                         <span
                           style={{
-                            background: isCompleted
+                            background: !teacherLock.unlocked
+                              ? '#ef4444'
+                              : isCompleted
                               ? '#299d82'
                               : isCurrentNext
                               ? '#f7b832'
                               : '#cad8d8',
-                            color: isCompleted ? '#fff' : '#174c59',
+                            color: '#fff',
                             padding: '2px 10px',
                             borderRadius: 999,
                             fontSize: 12,
                             fontWeight: 800
                           }}
                         >
-                          {isCompleted
+                          {!teacherLock.unlocked
+                            ? '🔒 مقفلة بقرار المعلم'
+                            : isCompleted
                             ? '✅ مكتمل (تم الاجتياز)'
                             : isCurrentNext
                             ? '🔥 المرحلة الحالية المتاحة'
@@ -4757,14 +5085,34 @@ export default function App() {
                       <div style={{ fontSize: 13, color: 'var(--mut)' }}>
                         📖 {stg.passage.title} — (32 سؤالًا: 10 فهم + 10 قواعد + 10 صح/خطأ + 2 مقالي)
                       </div>
+                      {!teacherLock.unlocked && (
+                        <div style={{ fontSize: 12, color: '#dc2626', marginTop: 4, fontWeight: 700 }}>
+                          {teacherLock.reason}
+                        </div>
+                      )}
                     </div>
 
                     <div>
-                      {isCompleted && !isTeacherAdmin ? (
+                      {!teacherLock.unlocked ? (
+                        <button
+                          className="btn light"
+                          disabled
+                          style={{
+                            background: '#fee2e2',
+                            color: '#991b1b',
+                            cursor: 'not-allowed',
+                            border: '1px solid #fca5a5',
+                            fontWeight: 800
+                          }}
+                          onClick={() => showNotice(teacherLock.reason || '🔒 هذه المرحلة لم تُفتح بعد من قِبل المعلم.')}
+                        >
+                          🔒 لم تُفتح بعد من قِبل المعلم
+                        </button>
+                      ) : isCompleted && !isTeacherAdmin ? (
                         <button className="btn light" disabled>
                           ✅ تم إتمام هذه المرحلة
                         </button>
-                      ) : isUnlocked ? (
+                      ) : isUnlockedByProgress ? (
                         <button
                           className="btn gold"
                           onClick={() => launchNafesStage(stg, idx)}
@@ -4848,6 +5196,49 @@ export default function App() {
               </div>
             ) : (
               <div>
+                {/* إشعار المعلم المعتمد وحالة المنصة */}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: 10,
+                    background: 'linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%)',
+                    border: '1.5px solid #86efac',
+                    borderRadius: 14,
+                    padding: '12px 16px',
+                    marginBottom: 14,
+                    boxShadow: '0 2px 8px rgba(16, 185, 129, 0.08)'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ fontSize: 28 }}>👨‍🏫</span>
+                    <div>
+                      <h4 style={{ margin: 0, color: '#166534', fontSize: 15, fontWeight: 900 }}>
+                        المعلم المشرف المعتمد: أ. مساعد سليمان الصخري
+                      </h4>
+                      <p style={{ margin: '2px 0 0', color: '#15803d', fontSize: 12.5 }}>
+                        الحساب المعتمد للإدارة السحابية: <code style={{ background: '#dcfce7', padding: '1px 6px', borderRadius: 6, fontWeight: 700 }}>msa3dals5ary@gmail.com</code> (صلاحيات كاملة 24/7)
+                      </p>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span
+                      style={{
+                        background: scheduleInfo.isOpen ? '#10b981' : '#ea580c',
+                        color: '#fff',
+                        padding: '4px 12px',
+                        borderRadius: 999,
+                        fontSize: 12,
+                        fontWeight: 900
+                      }}
+                    >
+                      حالة المنصة: {scheduleInfo.statusLabel}
+                    </span>
+                  </div>
+                </div>
+
                 <div
                   style={{
                     display: 'flex',
@@ -4858,7 +5249,31 @@ export default function App() {
                     marginBottom: 14
                   }}
                 >
-                  <div className="tabRow" style={{ marginBottom: 0 }}>
+                  <div className="tabRow" style={{ marginBottom: 0, flexWrap: 'wrap' }}>
+                    <button
+                      className={`btn ${adminTab === 'schedule' ? 'primary' : 'light'}`}
+                      onClick={() => setAdminTab('schedule')}
+                    >
+                      ⏰ إدارة مواعيد المنصة
+                    </button>
+                    <button
+                      className={`btn ${adminTab === 'nafesStages' ? 'primary' : 'light'}`}
+                      onClick={() => setAdminTab('nafesStages')}
+                    >
+                      🏆 مراحل اختبار نافس
+                    </button>
+                    <button
+                      className={`btn ${adminTab === 'settings' ? 'primary' : 'light'}`}
+                      onClick={() => setAdminTab('settings')}
+                    >
+                      🔐 صلاحيات الوحدات والألعاب
+                    </button>
+                    <button
+                      className={`btn ${adminTab === 'announcements' ? 'primary' : 'light'}`}
+                      onClick={() => setAdminTab('announcements')}
+                    >
+                      📣 شريط النتائج والتوجيهات ({appSettings.tickerAnnouncements?.length || 0})
+                    </button>
                     <button
                       className={`btn ${adminTab === 'students' ? 'primary' : 'light'}`}
                       onClick={() => setAdminTab('students')}
@@ -4870,12 +5285,6 @@ export default function App() {
                       onClick={() => setAdminTab('challenges')}
                     >
                       🎯 إضافة وإدارة التحديات ({allDailyChallenges.length})
-                    </button>
-                    <button
-                      className={`btn ${adminTab === 'announcements' ? 'primary' : 'light'}`}
-                      onClick={() => setAdminTab('announcements')}
-                    >
-                      🏆 شريط النتائج والتوجيهات ({appSettings.tickerAnnouncements?.length || 0})
                     </button>
                     <button
                       className={`btn ${adminTab === 'parentMessages' ? 'primary' : 'light'}`}
@@ -4899,12 +5308,6 @@ export default function App() {
                       )}
                     </button>
                     <button
-                      className={`btn ${adminTab === 'settings' ? 'primary' : 'light'}`}
-                      onClick={() => setAdminTab('settings')}
-                    >
-                      🛡️ الصلاحيات والتحديثات
-                    </button>
-                    <button
                       className={`btn ${adminTab === 'feedback' ? 'primary' : 'light'}`}
                       onClick={() => setAdminTab('feedback')}
                     >
@@ -4926,6 +5329,457 @@ export default function App() {
                     تسجيل خروج المعلم
                   </button>
                 </div>
+
+                {/* TAB: SCHEDULE & PLATFORM TIMINGS MANAGEMENT */}
+                {adminTab === 'schedule' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    {/* بطاقة رأس القسم */}
+                    <div
+                      style={{
+                        background: 'linear-gradient(135deg, #064e3b 0%, #047857 50%, #0d9488 100%)',
+                        color: '#fff',
+                        borderRadius: 16,
+                        padding: '16px 20px',
+                        boxShadow: '0 4px 16px rgba(4, 120, 87, 0.15)',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        flexWrap: 'wrap',
+                        gap: 12
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <span style={{ fontSize: 34 }}>⏰</span>
+                        <div>
+                          <h3 style={{ margin: 0, fontSize: 19, fontWeight: 900 }}>
+                            إدارة مواعيد المنصة وصلاحيات الفتح والإغلاق
+                          </h3>
+                          <p style={{ margin: '4px 0 0', fontSize: 13, color: '#a7f3d0' }}>
+                            المعلم هو صاحب الصلاحية الرئيسية والوحيدة. تحكم يدوي فوري في أي وقت، مع خيار الجدولة التلقائية المعتمدة.
+                          </p>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span
+                          style={{
+                            background: scheduleInfo.isOpen ? '#10b981' : '#ea580c',
+                            color: '#fff',
+                            fontSize: 13,
+                            fontWeight: 900,
+                            padding: '6px 14px',
+                            borderRadius: 999,
+                            boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
+                          }}
+                        >
+                          الحالة الحالية: {scheduleInfo.statusLabel}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* أولاً: أزرار التحكم اليدوي المباشر السريع */}
+                    <div
+                      style={{
+                        background: '#ffffff',
+                        border: '2px solid #cbd5e1',
+                        borderRadius: 16,
+                        padding: '18px 20px',
+                        boxShadow: '0 2px 10px rgba(0,0,0,0.04)'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 14 }}>
+                        <div>
+                          <h4 style={{ margin: 0, fontSize: 16, color: '#1e293b', fontWeight: 800 }}>
+                            ⚡ 1. التحكم اليدوي المباشر في حالة المنصة (أولوية مطلقة للمعلم)
+                          </h4>
+                          <p style={{ margin: '3px 0 0', fontSize: 13, color: '#64748b' }}>
+                            يمكنك فتح المنصة أو إغلاقها فوراً في أي وقت تريده بضغطة زر واحدة دون انتظار أي موعد مجدول:
+                          </p>
+                        </div>
+                        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                          <button
+                            type="button"
+                            className="btn green"
+                            style={{
+                              fontSize: 14,
+                              fontWeight: 900,
+                              padding: '10px 20px',
+                              boxShadow: '0 4px 12px rgba(22, 163, 74, 0.25)'
+                            }}
+                            onClick={handlePlatformOpenNow}
+                          >
+                            🟢 فتح المنصة الآن للجميع
+                          </button>
+                          <button
+                            type="button"
+                            className="btn coral"
+                            style={{
+                              fontSize: 14,
+                              fontWeight: 900,
+                              padding: '10px 20px',
+                              boxShadow: '0 4px 12px rgba(220, 38, 38, 0.25)'
+                            }}
+                            onClick={handlePlatformCloseNow}
+                          >
+                            🔴 إغلاق المنصة الآن عن الجميع
+                          </button>
+                        </div>
+                      </div>
+
+                      <div
+                        style={{
+                          background: scheduleInfo.isOpen ? '#f0fdf4' : '#fff7ed',
+                          border: `1.5px solid ${scheduleInfo.isOpen ? '#86efac' : '#fdba74'}`,
+                          borderRadius: 12,
+                          padding: '12px 16px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          flexWrap: 'wrap',
+                          gap: 10
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <span style={{ fontSize: 24 }}>{scheduleInfo.isOpen ? '🟢' : '🔒'}</span>
+                          <div>
+                            <b style={{ color: scheduleInfo.isOpen ? '#166534' : '#9a3412', fontSize: 14 }}>
+                              مؤشر الوضع الراهن: المنصة {scheduleInfo.isOpen ? 'مفتوحة ومتاحة لجميع الطلاب' : 'مغلقة ومحجوبة عن الطلاب'}
+                            </b>
+                            <span style={{ display: 'block', fontSize: 12, color: scheduleInfo.isOpen ? '#15803d' : '#c2410c' }}>
+                              {scheduleInfo.message}
+                            </span>
+                          </div>
+                        </div>
+                        <span
+                          style={{
+                            background: '#fff',
+                            border: '1px solid #cbd5e1',
+                            borderRadius: 8,
+                            padding: '4px 10px',
+                            fontSize: 12,
+                            fontWeight: 700,
+                            color: '#475569'
+                          }}
+                        >
+                          نظام التحكم: {appSettings.scheduleEnabled ? 'مجدول تلقائي ⏱️' : 'يدوي مباشر 👨‍🏫'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* ثانياً: قسم الجدولة الزمنية التلقائية */}
+                    <div
+                      style={{
+                        background: '#f8fafc',
+                        border: '2px solid #94a3b8',
+                        borderRadius: 16,
+                        padding: '18px 20px'
+                      }}
+                    >
+                      <div style={{ marginBottom: 14 }}>
+                        <h4 style={{ margin: 0, fontSize: 16, color: '#0f172a', fontWeight: 800 }}>
+                          ⏱️ 2. جدولة مواعيد الفتح والإغلاق التلقائية (اختياري للمعلم)
+                        </h4>
+                        <p style={{ margin: '3px 0 0', fontSize: 13, color: '#475569' }}>
+                          حدد تاريخ ووقت فتح المنصة وتاريخ ووقت إغلاقها، وسيقوم النظام بتطبيقها تلقائياً مع عرض عداد تنازلي للطلاب. يمكنك إلغاء الجدولة والعودة للتحكم اليدوي في أي لحظة.
+                        </p>
+                      </div>
+
+                      <div
+                        style={{
+                          background: '#fff',
+                          border: '1px solid #e2e8f0',
+                          borderRadius: 12,
+                          padding: '14px',
+                          marginBottom: 14
+                        }}
+                      >
+                        <label
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 10,
+                            cursor: 'pointer',
+                            fontSize: 14,
+                            fontWeight: 800,
+                            color: '#1e293b'
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={schedEnabledDraft}
+                            onChange={e => setSchedEnabledDraft(e.target.checked)}
+                            style={{ width: 18, height: 18, accentColor: '#059669' }}
+                          />
+                          <span>
+                            تشغيل نظام الجدولة الزمنية التلقائية (تفعيل فتح المنصة وإغلاقها حسب التاريخ والوقت المحددين)
+                          </span>
+                        </label>
+                      </div>
+
+                      <div
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+                          gap: 14,
+                          marginBottom: 16
+                        }}
+                      >
+                        <div className="field">
+                          <label style={{ fontWeight: 800, color: '#166534' }}>
+                            📅 تاريخ ووقت فتح المنصة المجدول:
+                          </label>
+                          <input
+                            type="datetime-local"
+                            value={schedOpenInput}
+                            onChange={e => setSchedOpenInput(e.target.value)}
+                            style={{
+                              padding: '10px 12px',
+                              borderRadius: 10,
+                              border: '1.5px solid #86efac',
+                              fontWeight: 700
+                            }}
+                          />
+                          <small style={{ color: '#64748b', fontSize: 11 }}>
+                            تفتح المنصة تلقائياً فور حلول هذا التوقيت
+                          </small>
+                        </div>
+
+                        <div className="field">
+                          <label style={{ fontWeight: 800, color: '#991b1b' }}>
+                            📅 تاريخ ووقت إغلاق المنصة المجدول:
+                          </label>
+                          <input
+                            type="datetime-local"
+                            value={schedCloseInput}
+                            onChange={e => setSchedCloseInput(e.target.value)}
+                            style={{
+                              padding: '10px 12px',
+                              borderRadius: 10,
+                              border: '1.5px solid #fca5a5',
+                              fontWeight: 700
+                            }}
+                          />
+                          <small style={{ color: '#64748b', fontSize: 11 }}>
+                            تُغلق المنصة وتُحجب الأنشطة فور حلول هذا التوقيت
+                          </small>
+                        </div>
+                      </div>
+
+                      {/* أزرار الحفظ والإلغاء وتأكيد العملية */}
+                      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                        <button
+                          type="button"
+                          className="btn green"
+                          style={{ padding: '9px 18px', fontWeight: 800 }}
+                          onClick={handleSavePlatformSchedule}
+                        >
+                          💾 حفظ وتطبيق مواعيد المنصة سحابياً
+                        </button>
+                        <button
+                          type="button"
+                          className="btn light"
+                          style={{ padding: '9px 18px', fontWeight: 700 }}
+                          onClick={handleCancelPlatformSchedule}
+                        >
+                          ❌ إلغاء الجدولة والاعتماد على التحكم اليدوي فقط
+                        </button>
+                      </div>
+
+                      {/* بطاقة عرض المواعيد المحفوظة في قاعدة البيانات */}
+                      <div
+                        style={{
+                          marginTop: 16,
+                          background: '#ffffff',
+                          border: '1px solid #cbd5e1',
+                          borderRadius: 12,
+                          padding: '12px 16px',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          flexWrap: 'wrap',
+                          gap: 10
+                        }}
+                      >
+                        <div>
+                          <b style={{ color: '#334155', fontSize: 13 }}>📋 ملخص المواعيد المحفوظة في الخادم السحابي:</b>
+                          <div style={{ fontSize: 12.5, color: '#475569', marginTop: 4 }}>
+                            {appSettings.scheduleEnabled ? (
+                              <span>
+                                • موعد الفتح: <b>{appSettings.scheduledOpenAt ? new Date(appSettings.scheduledOpenAt).toLocaleString('ar-SA') : 'غير محدد'}</b> • موعد الإغلاق: <b>{appSettings.scheduledCloseAt ? new Date(appSettings.scheduledCloseAt).toLocaleString('ar-SA') : 'غير محدد'}</b>
+                              </span>
+                            ) : (
+                              <span>
+                                • نظام الجدولة <b>متوقف حالياً</b>. المنصة تعمل تحت <b>التحكم اليدوي المباشر للمعلم ({appSettings.platformManualStatus !== 'closed' ? 'مفتوحة' : 'مغلقة'})</b>.
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <span
+                          style={{
+                            background: appSettings.scheduleEnabled ? '#ecfdf5' : '#f1f5f9',
+                            color: appSettings.scheduleEnabled ? '#047857' : '#475569',
+                            padding: '3px 10px',
+                            borderRadius: 6,
+                            fontSize: 11,
+                            fontWeight: 800
+                          }}
+                        >
+                          {appSettings.scheduleEnabled ? 'جدولة نشطة ✅' : 'يدوي معتمد 👨‍🏫'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* TAB: NAFES STAGES MANAGEMENT */}
+                {adminTab === 'nafesStages' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    {/* بطاقة رأس القسم */}
+                    <div
+                      style={{
+                        background: 'linear-gradient(135deg, #78350f 0%, #b45309 50%, #d97706 100%)',
+                        color: '#fff',
+                        borderRadius: 16,
+                        padding: '16px 20px',
+                        boxShadow: '0 4px 16px rgba(180, 83, 9, 0.15)',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        flexWrap: 'wrap',
+                        gap: 12
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <span style={{ fontSize: 34 }}>🏆</span>
+                        <div>
+                          <h3 style={{ margin: 0, fontSize: 19, fontWeight: 900 }}>
+                            إدارة مراحل اختبار نافس الوطنية (المراحل 1 - 4)
+                          </h3>
+                          <p style={{ margin: '4px 0 0', fontSize: 13, color: '#fef3c7' }}>
+                            المعلم هو صاحب الصلاحية الرئيسية والوحيدة لفتح كل مرحلة أو إغلاقها. لا يمكن للطالب دخول أي مرحلة مقفلة.
+                          </p>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        <button
+                          type="button"
+                          className="btn green"
+                          style={{ fontSize: 13, padding: '7px 14px', fontWeight: 800 }}
+                          onClick={() => handleSetAllNafesStages(true)}
+                        >
+                          🔓 فتح جميع مراحل نافس (1 - 4)
+                        </button>
+                        <button
+                          type="button"
+                          className="btn coral"
+                          style={{ fontSize: 13, padding: '7px 14px', fontWeight: 800 }}
+                          onClick={() => handleSetAllNafesStages(false)}
+                        >
+                          🔒 إغلاق جميع مراحل نافس
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* شبكة بطاقات المراحل الـ 4 */}
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+                        gap: 14
+                      }}
+                    >
+                      {NAFES_STAGES.map((stage, idx) => {
+                        const stageNum = (idx + 1) as 1 | 2 | 3 | 4;
+                        const key = stageNum === 1 ? 'nafesStage1Open' : stageNum === 2 ? 'nafesStage2Open' : stageNum === 3 ? 'nafesStage3Open' : 'nafesStage4Open';
+                        const isOpen = stageNum === 1 ? appSettings.nafesStage1Open !== false : Boolean(appSettings[key]);
+                        const completedStudentsCount = leaderboardStudents.filter(
+                          s => s.completedNafesStages && s.completedNafesStages.includes(stage.id)
+                        ).length;
+
+                        return (
+                          <div
+                            key={stage.id}
+                            style={{
+                              background: '#ffffff',
+                              border: `2px solid ${isOpen ? '#22c55e' : '#fca5a5'}`,
+                              borderRadius: 14,
+                              padding: '16px',
+                              boxShadow: '0 2px 10px rgba(0,0,0,0.04)',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              justifyContent: 'space-between',
+                              gap: 12
+                            }}
+                          >
+                            <div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                                <span
+                                  style={{
+                                    background: isOpen ? '#dcfce7' : '#fee2e2',
+                                    color: isOpen ? '#15803d' : '#991b1b',
+                                    fontSize: 11,
+                                    fontWeight: 900,
+                                    padding: '3px 10px',
+                                    borderRadius: 999
+                                  }}
+                                >
+                                  {isOpen ? 'مفتوحة للطلاب ✅' : 'مقفلة بقرار المعلم 🔒'}
+                                </span>
+                                <small style={{ color: '#64748b', fontWeight: 700 }}>
+                                  المرحلة {stageNum} من 4
+                                </small>
+                              </div>
+
+                              <h4 style={{ margin: '0 0 6px', fontSize: 16, color: '#1e293b' }}>
+                                {stage.title}
+                              </h4>
+                              <p style={{ margin: '0 0 8px', fontSize: 12, color: '#64748b' }}>
+                                📖 {stage.passage.title} — (32 سؤالاً: 10 فهم + 10 قواعد + 10 صح/خطأ + 2 مقالي)
+                              </p>
+
+                              <div
+                                style={{
+                                  background: '#f8fafc',
+                                  border: '1px solid #e2e8f0',
+                                  borderRadius: 8,
+                                  padding: '8px 10px',
+                                  fontSize: 12,
+                                  color: '#334155',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between'
+                                }}
+                              >
+                                <span>👥 ملخص إنجاز الطلاب:</span>
+                                <b style={{ color: '#0f766e' }}>{completedStudentsCount} طالب أتموا هذه المرحلة</b>
+                              </div>
+                            </div>
+
+                            <div style={{ display: 'flex', gap: 8, paddingTop: 8, borderTop: '1px solid #f1f5f9' }}>
+                              <button
+                                type="button"
+                                className={`btn ${isOpen ? 'light' : 'green'}`}
+                                style={{ flex: 1, fontSize: 12, padding: '7px 10px', fontWeight: 800 }}
+                                onClick={() => handleToggleNafesStage(stageNum, true)}
+                                disabled={isOpen}
+                              >
+                                🔓 فتح المرحلة
+                              </button>
+                              <button
+                                type="button"
+                                className={`btn ${!isOpen ? 'light' : 'coral'}`}
+                                style={{ flex: 1, fontSize: 12, padding: '7px 10px', fontWeight: 800 }}
+                                onClick={() => handleToggleNafesStage(stageNum, false)}
+                                disabled={!isOpen}
+                              >
+                                🔒 إغلاق المرحلة
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 {/* TAB 1: STUDENTS & LEADERBOARD MANAGEMENT */}
                 {adminTab === 'students' && (
