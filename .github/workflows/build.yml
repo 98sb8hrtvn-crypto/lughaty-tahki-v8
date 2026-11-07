@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [feature/penalty-shootout-integration]
+    branches: [feature/penalty-shootout-integration, work/student-ready-ui-review]
 
 jobs:
   build:
