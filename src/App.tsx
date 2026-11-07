@@ -9977,7 +9977,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Parent-Teacher Private Messaging Modal */
+      {/* Parent-Teacher Private Messaging Modal */}
       <ParentMessagesModal
         show={activeModal === 'parentMessagesModal'}
         onClose={() => setActiveModal(null)}
