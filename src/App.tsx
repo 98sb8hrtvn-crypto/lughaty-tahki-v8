@@ -59,6 +59,8 @@ import {
   doc,
   collection,
   setDoc,
+  updateDoc,
+  deleteField,
   deleteDoc,
   onSnapshot,
   query,
@@ -877,6 +879,13 @@ export default function App() {
         u.email.toLowerCase() === ADMIN_EMAIL.toLowerCase()
       );
       if (verifiedAdmin) {
+        // Remove the legacy teacher PIN from the public settings document after verified admin sign-in.
+        updateDoc(doc(db, 'app_settings', 'global'), {
+          adminPin: deleteField(),
+          updatedAt: Date.now()
+        }).catch(err => {
+          console.warn('Legacy admin PIN cleanup was not completed:', err);
+        });
         const qFeedback = query(collection(db, 'feedback'));
         unsubFeedback = onSnapshot(
           qFeedback,
