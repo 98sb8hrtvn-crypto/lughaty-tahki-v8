@@ -159,7 +159,7 @@ export const COMMENTARY_REGISTRY: Record<string, ClipInfo> = {
   // 1. الافتتاحية الرسمية للبطولة
   mp3_intro_start: {
     id: 'mp3_intro_start',
-    path: encAudio('بسم الله الرحمن الرحيم إلى أبطاله.mp3'),
+    path: encAudio('صوت  البداية 1.mp3'),
     text: 'صوت البداية والافتتاحية للمباراة',
     category: 'intro',
     persona: 'goal_commentator',
@@ -2560,7 +2560,8 @@ export default function App() {
       ctx.font = 'bold 11px system-ui, -apple-system, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      const pLabel = isStriker ? `⚽ ${s.name || 'الطالب'}` : '🔴 المنافس (مسدد)';
+      const studentFirstName = (s.name || 'الطالب').trim().split(/\s+/)[0];
+      const pLabel = isStriker ? `⚽ ${studentFirstName}` : '🔴 المنافس (مسدد)';
       const pw = ctx.measureText(pLabel).width + 12;
       ctx.fillStyle = isStriker ? 'rgba(39, 174, 96, 0.92)' : 'rgba(192, 57, 43, 0.92)';
       ctx.beginPath();
@@ -2652,7 +2653,8 @@ export default function App() {
     ctx.font = 'bold 10px system-ui, -apple-system, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    const kLabel = isStriker ? '🧤 حارس المنافس' : `🧤 ${s.name || 'الطالب'} (حارس)`;
+    const studentFirstName = (s.name || 'الطالب').trim().split(/\s+/)[0];
+    const kLabel = isStriker ? '🧤 حارس المنافس' : `🧤 ${studentFirstName} (حارس)`;
     const kw = ctx.measureText(kLabel).width + 12;
     ctx.fillStyle = isStriker ? 'rgba(37, 168, 184, 0.92)' : 'rgba(39, 174, 96, 0.92)';
     ctx.beginPath();
@@ -3913,7 +3915,7 @@ export default function App() {
 
       // Directly & synchronously trigger audio playback on this user click for iOS Safari
       playIntro(
-        encAudio('بسم الله الرحمن الرحيم إلى أبطاله.mp3'),
+        encAudio('صوت  البداية 1.mp3'),
         // 1. Native 'ended' event callback (ONLY when audio genuinely finishes):
         () => {
           s.introPlayed = true;
@@ -3995,7 +3997,7 @@ export default function App() {
     setMsgText('﷽ افتتاحية البطولة: استمع لصوت البداية والبسملة...');
 
     playIntro(
-      encAudio('بسم الله الرحمن الرحيم إلى أبطاله.mp3'),
+      encAudio('صوت  البداية 1.mp3'),
       () => {
         s.introPlayed = true;
         s.introInProgress = false;
