@@ -425,3 +425,26 @@ body.landing{overflow:hidden}
 
 
 
+
+
+/* واجهة الطالب المختصرة — مربعات متجاورة بأسلوب تحضيري */
+.studentQuickNav{margin:18px 0 24px;padding:16px;background:linear-gradient(180deg,#f3fbf9 0%,#fff 100%);border:1px solid #dcefeb;border-radius:24px}
+.studentQuickNavHeading{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:12px}
+.studentQuickNavHeading h2{margin:0;color:#125f62;font-size:clamp(18px,3vw,24px);font-weight:900}
+.studentQuickNavHeading span{font-size:12px;color:#688087;font-weight:700}
+.studentQuickNavGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;direction:rtl}
+.studentQuickTile{min-width:0;aspect-ratio:1/1;border:1px solid #dcebe8;border-radius:18px;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;padding:8px 5px;color:#174c59;box-shadow:0 5px 14px rgba(18,86,92,.07);transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
+.studentQuickTile:active{transform:scale(.97)}
+.studentQuickTile:focus-visible{outline:3px solid #e6b64c;outline-offset:2px}
+.studentQuickIcon{width:48px;height:48px;border-radius:15px;display:grid;place-items:center;background:#eaf7f4;font-size:27px;line-height:1}
+.studentQuickTile strong{font-size:clamp(10px,1.7vw,13px);font-weight:900;text-align:center;line-height:1.35;overflow-wrap:anywhere}
+.studentQuickTile.race .studentQuickIcon{background:#fff3d5}
+.studentQuickTile.daily .studentQuickIcon{background:#fff4df}
+.studentQuickTile.lessons .studentQuickIcon{background:#e8f1ff}
+.studentQuickTile.games .studentQuickIcon{background:#f1eaff}
+.studentQuickTile.clinic .studentQuickIcon{background:#fff0f0}
+.studentQuickTile.nafes .studentQuickIcon{background:#e8f8f0}
+.studentQuickTile.messages .studentQuickIcon{background:#eaf3ff}
+.studentQuickTile.profile .studentQuickIcon{background:#f1f4f6}
+@media(max-width:520px){.studentQuickNav{padding:11px;border-radius:18px}.studentQuickNavGrid{gap:7px}.studentQuickTile{border-radius:14px;padding:6px 3px;gap:5px}.studentQuickIcon{width:40px;height:40px;border-radius:12px;font-size:23px}.studentQuickTile strong{font-size:10px}}
+@media(prefers-reduced-motion:reduce){.studentQuickTile{transition:none}}
