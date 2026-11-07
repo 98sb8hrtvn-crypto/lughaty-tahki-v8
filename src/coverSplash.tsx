@@ -496,7 +496,7 @@ export const CoverSplash: React.FC<CoverSplashProps> = ({ onEnter }) => {
             fill="#ffffff"
             textAnchor="middle"
           >
-            دخول
+            دخول الطالب
           </text>
           {/* Right Arrow */}
           <g
@@ -522,89 +522,31 @@ export const CoverSplash: React.FC<CoverSplashProps> = ({ onEnter }) => {
           fill="url(#hdWaveTeal)"
         />
 
-        {/* 9. Bottom Left Card: إعداد وتنفيذ المعلم / مساعد سليمان الصخري */}
-        <g transform="translate(22, 896)" filter="url(#hdShadow)">
-          <rect x="0" y="0" width="446" height="126" rx="40" fill="#fbf9f0" />
+        {/* التذييل الأوسط: الترحيب واسم المعلم */}
+        <g transform="translate(460, 896)" filter="url(#hdShadow)">
+          <rect x="0" y="0" width="680" height="126" rx="40" fill="#fbf9f0" />
           <text
-            x="202"
-            y="53"
+            x="340"
+            y="49"
             fontFamily="Cairo, Tajawal, Tahoma, sans-serif"
-            fontSize="26"
+            fontSize="29"
+            fontWeight="900"
+            fill="#124b48"
+            textAnchor="middle"
+          >
+            أهلًا بك يا بطل اللغة العربية
+          </text>
+          <text
+            x="340"
+            y="91"
+            fontFamily="Cairo, Tajawal, Tahoma, sans-serif"
+            fontSize="24"
             fontWeight="800"
             fill="#124b48"
             textAnchor="middle"
           >
-            إعــــداد وتنفيــــذ :
+            إعداد وتنفيذ المعلم / مساعد سليمان الصخري
           </text>
-          <text
-            x="202"
-            y="95"
-            fontFamily="Cairo, Tajawal, Tahoma, sans-serif"
-            fontSize="25"
-            fontWeight="800"
-            fill="#124b48"
-            textAnchor="middle"
-          >
-            المعلم / مساعد سليمان الصخري
-          </text>
-          {/* Teacher at Whiteboard Icon */}
-          <g transform="translate(30, 26)" fill="#124b48">
-            <rect
-              x="26"
-              y="2"
-              width="52"
-              height="36"
-              rx="4"
-              fill="none"
-              stroke="#124b48"
-              strokeWidth="4"
-            />
-            <circle cx="16" cy="22" r="10" />
-            <path d="M2,70 C2,45 32,45 32,70 Z" />
-            <line
-              x1="26"
-              y1="44"
-              x2="48"
-              y2="24"
-              stroke="#124b48"
-              strokeWidth="5"
-              strokeLinecap="round"
-            />
-          </g>
-        </g>
-
-        {/* 10. Bottom Right Card: مدير المدرسة / ضيف الله عوض العنزي */}
-        <g transform="translate(1142, 896)" filter="url(#hdShadow)">
-          <rect x="0" y="0" width="436" height="126" rx="40" fill="#fbf9f0" />
-          <text
-            x="185"
-            y="53"
-            fontFamily="Cairo, Tajawal, Tahoma, sans-serif"
-            fontSize="26"
-            fontWeight="800"
-            fill="#124b48"
-            textAnchor="middle"
-          >
-            مدير المدرسة /
-          </text>
-          <text
-            x="185"
-            y="95"
-            fontFamily="Cairo, Tajawal, Tahoma, sans-serif"
-            fontSize="26"
-            fontWeight="800"
-            fill="#124b48"
-            textAnchor="middle"
-          >
-            ضيف الله عوض العنزي
-          </text>
-          {/* Principal Icon */}
-          <g transform="translate(338, 18)" fill="#124b48">
-            <circle cx="32" cy="18" r="14" />
-            <path d="M4,78 C4,46 60,46 60,78 Z" />
-            <polygon points="27,44 37,44 35,68 29,68" fill="#fbf9f0" />
-            <polygon points="30,46 34,46 33,65 31,65" fill="#124b48" />
-          </g>
         </g>
       </svg>
     </div>
