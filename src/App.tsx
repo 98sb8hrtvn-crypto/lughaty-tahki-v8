@@ -1943,10 +1943,6 @@ export default function App() {
 
   const openPenaltyGame = () => {
     if (!needProfile()) return;
-    if (!appSettings.enableGames) {
-      showNotice('مركز الألعاب مغلق مؤقتًا من قِبل المعلم.');
-      return;
-    }
     const u1 = appSettings.unit1Open !== false || isTeacherAdmin;
     const u2 = appSettings.unit2Open === true || isTeacherAdmin;
     const u3 = appSettings.unit3Open === true || isTeacherAdmin;
@@ -3962,6 +3958,9 @@ export default function App() {
               <div className="studentQuickNavGrid">
                 <button className="studentQuickTile race" onClick={() => document.getElementById('raceSection')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
                   <span className="studentQuickIcon">🏇</span><strong>مضمار السباق</strong>
+                </button>
+                <button className="studentQuickTile penalty" onClick={openPenaltyGame}>
+                  <span className="studentQuickIcon">⚽</span><strong>ركلات الترجيح</strong>
                 </button>
                 <button className="studentQuickTile daily" onClick={() => document.getElementById('dailyChallengeSection')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
                   <span className="studentQuickIcon">🎯</span><strong>تحدي اليوم</strong>
@@ -8589,14 +8588,6 @@ export default function App() {
                     )}
                   </div>
 
-                  <div className="game" style={{ marginBottom: 14, border: '1.5px solid #86efac', background: 'linear-gradient(135deg, #f0fdf4, #ffffff)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                      <h3 style={{ margin: 0 }}>⚽ ركلات الترجيح</h3>
-                      <span style={{ fontSize: 11, background: '#dcfce7', color: '#166534', padding: '3px 8px', borderRadius: 8, fontWeight: 800 }}>بطولة لغتي التعليمية</span>
-                    </div>
-                    <p style={{ fontSize: 13, color: '#446468', margin: '6px 0 12px' }}>أجب عن الأسئلة اللغوية، وسدّد أو تصدَّ في خمس مراحل. تُضاف النقطة إلى رصيدك الأصلي مرة واحدة لكل سؤال صحيح.</p>
-                    <button className="btn green full" onClick={openPenaltyGame}>ابدأ ركلات الترجيح ⚽</button>
-                  </div>
                   <div id="gameMenu" className="gameGrid">
                     {/* 1. المحقق اللغوي */}
                     {(() => {
