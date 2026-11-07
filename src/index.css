@@ -439,6 +439,7 @@ body.landing{overflow:hidden}
 .studentQuickIcon{width:48px;height:48px;border-radius:15px;display:grid;place-items:center;background:#eaf7f4;font-size:27px;line-height:1}
 .studentQuickTile strong{font-size:clamp(10px,1.7vw,13px);font-weight:900;text-align:center;line-height:1.35;overflow-wrap:anywhere}
 .studentQuickTile.race .studentQuickIcon{background:#fff3d5}
+.studentQuickTile.penalty .studentQuickIcon{background:#e8f8ef;border:1px solid #b9e7c9}
 .studentQuickTile.daily .studentQuickIcon{background:#fff4df}
 .studentQuickTile.lessons .studentQuickIcon{background:#e8f1ff}
 .studentQuickTile.games .studentQuickIcon{background:#f1eaff}
