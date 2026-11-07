@@ -3930,7 +3930,7 @@ export default function App() {
                           setActiveModal('profileModal');
                         }}
                       >
-                        👤 تسجيل الدخول / إنشاء ملف
+                        👤 دخول الطالب
                       </button>
                       <button
                         className="btn light"
@@ -3953,6 +3953,39 @@ export default function App() {
                 </div>
               </section>
             )}
+
+            <section className="studentQuickNav" aria-label="القائمة الرئيسية للطالب">
+              <div className="studentQuickNavHeading">
+                <h2>ابدأ رحلتك في لغتي</h2>
+                <span>اختر وجهتك</span>
+              </div>
+              <div className="studentQuickNavGrid">
+                <button className="studentQuickTile race" onClick={() => document.getElementById('raceSection')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+                  <span className="studentQuickIcon">🏇</span><strong>مضمار السباق</strong>
+                </button>
+                <button className="studentQuickTile daily" onClick={() => document.getElementById('dailyChallengeSection')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+                  <span className="studentQuickIcon">🎯</span><strong>تحدي اليوم</strong>
+                </button>
+                <button className="studentQuickTile lessons" onClick={() => document.getElementById('unitsSection')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+                  <span className="studentQuickIcon">📚</span><strong>الوحدات الدراسية</strong>
+                </button>
+                <button className="studentQuickTile games" onClick={openGames}>
+                  <span className="studentQuickIcon">🎮</span><strong>الألعاب اللغوية</strong>
+                </button>
+                <button className="studentQuickTile clinic" onClick={openMistakesClinic}>
+                  <span className="studentQuickIcon">🩺</span><strong>عيادة اللغة</strong>
+                </button>
+                <button className="studentQuickTile nafes" onClick={handleNafes}>
+                  <span className="studentQuickIcon">🏆</span><strong>مراحل نافس</strong>
+                </button>
+                <button className="studentQuickTile messages" onClick={() => setActiveModal('parentMessagesModal')}>
+                  <span className="studentQuickIcon">💬</span><strong>تواصل ولي الأمر</strong>
+                </button>
+                <button className="studentQuickTile profile" onClick={() => { setProfileMode('chooser'); setActiveModal('profileModal'); }}>
+                  <span className="studentQuickIcon">👤</span><strong>ملف الطالب</strong>
+                </button>
+              </div>
+            </section>
 
             {/* ================================================================= */}
             {/* DAILY CHALLENGE: AT THE TOP (سؤال تحدي اليوم في الأعلى استجابة لطلب المعلم) */}
@@ -4195,7 +4228,7 @@ export default function App() {
             {/* ================================================================= */}
             {/* HORSE RACE LEADERBOARD FOR TOP 10 STUDENTS & EXAM PROGRESS TABLE   */}
             {/* ================================================================= */}
-            <section className="raceSection">
+            <section id="raceSection" className="raceSection">
               <div
                 style={{
                   display: 'flex',
@@ -4838,7 +4871,7 @@ export default function App() {
               </section>
             )}
 
-            <section>
+            <section id="unitsSection">
               <div className="secTitle">
                 <h2>📖 الوحدات الدراسية</h2>
                 <span className="line" />
