@@ -96,11 +96,11 @@ service cloud.firestore {
     function isValidSettings(data) {
       return data.keys().hasAll([
           'announcement', 'enforce24hChallengeLock', 'enableGames',
-          'enableNafes', 'enableFeedback', 'adminPin', 'updatedAt'
+          'enableNafes', 'enableFeedback', 'updatedAt'
         ]) &&
         data.keys().hasOnly([
           'announcement', 'enforce24hChallengeLock', 'enableGames',
-          'enableNafes', 'enableFeedback', 'adminPin', 'updatedAt',
+          'enableNafes', 'enableFeedback', 'updatedAt',
           'orderUnlockAll', 'orderUnit1Open', 'orderUnit2Open', 'orderUnit3Open',
           'unit1Open', 'unit2Open', 'unit3Open',
           'gameDetectiveOpen', 'gameOrderOpen', 'gameMeaningOpen', 'gameSpeedOpen',
@@ -113,7 +113,6 @@ service cloud.firestore {
         data.enableGames is bool &&
         data.enableNafes is bool &&
         data.enableFeedback is bool &&
-        data.adminPin is string && data.adminPin.size() >= 4 && data.adminPin.size() <= 12 &&
         data.updatedAt is number && data.updatedAt >= 0 &&
         (!('orderUnlockAll' in data) || (data.orderUnlockAll is bool)) &&
         (!('orderUnit1Open' in data) || (data.orderUnit1Open is bool)) &&
@@ -176,35 +175,35 @@ service cloud.firestore {
         isAdmin() ||
         incoming().profileId == existing().profileId
       );
-      allow delete: if isValidId(studentId);
+      allow delete: if isAdmin() && isValidId(studentId);
     }
 
     match /custom_challenges/{challengeId} {
       allow read: if true;
-      allow create: if isValidId(challengeId) && isValidChallenge(incoming());
-      allow update: if isValidId(challengeId) && isValidChallenge(incoming());
-      allow delete: if isValidId(challengeId);
+      allow create: if isAdmin() && isValidId(challengeId) && isValidChallenge(incoming());
+      allow update: if isAdmin() && isValidId(challengeId) && isValidChallenge(incoming());
+      allow delete: if isAdmin() && isValidId(challengeId);
     }
 
     match /app_settings/{settingId} {
       allow read: if true;
-      allow create: if isValidId(settingId) && isValidSettings(incoming());
-      allow update: if isValidId(settingId) && isValidSettings(incoming());
-      allow delete: if isValidId(settingId);
+      allow create: if isAdmin() && isValidId(settingId) && isValidSettings(incoming());
+      allow update: if isAdmin() && isValidId(settingId) && isValidSettings(incoming());
+      allow delete: if isAdmin() && isValidId(settingId);
     }
 
     match /feedback/{feedbackId} {
-      allow read: if true;
+      allow read: if isAdmin();
       allow create: if isValidId(feedbackId) && isValidFeedback(incoming());
-      allow update: if isValidId(feedbackId) && isValidFeedback(incoming());
-      allow delete: if isValidId(feedbackId);
+      allow update: if isAdmin() && isValidId(feedbackId) && isValidFeedback(incoming());
+      allow delete: if isAdmin() && isValidId(feedbackId);
     }
 
     match /parent_messages/{messageId} {
       allow read: if true;
       allow create: if isValidId(messageId) && isValidParentMessage(incoming());
-      allow update: if isValidId(messageId) && isValidParentMessage(incoming());
-      allow delete: if isValidId(messageId);
+      allow update: if isAdmin() && isValidId(messageId) && isValidParentMessage(incoming());
+      allow delete: if isAdmin() && isValidId(messageId);
     }
   }
 }

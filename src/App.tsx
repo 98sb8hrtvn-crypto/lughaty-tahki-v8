@@ -59,6 +59,8 @@ import {
   doc,
   collection,
   setDoc,
+  updateDoc,
+  deleteField,
   deleteDoc,
   onSnapshot,
   query,
@@ -171,7 +173,6 @@ interface AppSettings {
   enableGames: boolean;
   enableNafes: boolean;
   enableFeedback: boolean;
-  adminPin: string;
   updatedAt: number;
   orderUnlockAll?: boolean;
   orderUnit1Open?: boolean;
@@ -403,7 +404,6 @@ const DEFAULT_SETTINGS: AppSettings = {
   enableGames: true,
   enableNafes: true,
   enableFeedback: true,
-  adminPin: '1448',
   platformManualStatus: 'open',
   scheduleEnabled: false,
   scheduledOpenAt: '',
@@ -436,9 +436,6 @@ export default function App() {
       if (savedActive && savedProfiles[savedActive]) {
         return 'app';
       }
-      if (localStorage.getItem('LT_ADMIN_UNLOCKED') === 'true') {
-        return 'app';
-      }
     } catch {}
     return 'cover';
   });
@@ -455,14 +452,6 @@ export default function App() {
 
   // Firebase Auth & Cloud Database State
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
-  const [adminUnlockedByPin, setAdminUnlockedByPin] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('LT_ADMIN_UNLOCKED') === 'true';
-    } catch {
-      return false;
-    }
-  });
-  const [adminPinInput, setAdminPinInput] = useState<string>('');
   const [cloudStudents, setCloudStudents] = useState<CloudStudentRow[]>([]);
   const [customChallenges, setCustomChallenges] = useState<(DailyChallengeItem & { docId: string })[]>([]);
   const [cloudFeedback, setCloudFeedback] = useState<FeedbackItem[]>([]);
@@ -657,9 +646,11 @@ export default function App() {
 
   const currentProfile = activeId && profiles[activeId] ? profiles[activeId] : null;
   const studentMistakes = currentProfile?.mistakes || [];
-  const isTeacherAdmin =
-    adminUnlockedByPin ||
-    Boolean(firebaseUser?.email && firebaseUser.email.toLowerCase() === ADMIN_EMAIL.toLowerCase());
+  const isTeacherAdmin = Boolean(
+    firebaseUser?.emailVerified &&
+    firebaseUser.email &&
+    firebaseUser.email.toLowerCase() === ADMIN_EMAIL.toLowerCase()
+  );
 
   // تتبع الجلسات ونبضات التواجد الفعلي للطلاب في الوقت الحقيقي (Realtime Presence & Heartbeat)
   useEffect(() => {
@@ -875,8 +866,52 @@ export default function App() {
 
   // Listen to Firebase Auth state and real-time Firestore collections
   useEffect(() => {
+    let unsubFeedback: (() => void) | null = null;
     const unsubAuth = onAuthStateChanged(auth, u => {
       setFirebaseUser(u);
+      if (unsubFeedback) {
+        unsubFeedback();
+        unsubFeedback = null;
+      }
+      const verifiedAdmin = Boolean(
+        u?.emailVerified &&
+        u.email &&
+        u.email.toLowerCase() === ADMIN_EMAIL.toLowerCase()
+      );
+      if (verifiedAdmin) {
+        // Remove the legacy teacher PIN from the public settings document after verified admin sign-in.
+        updateDoc(doc(db, 'app_settings', 'global'), {
+          adminPin: deleteField(),
+          updatedAt: Date.now()
+        }).catch(err => {
+          console.warn('Legacy admin PIN cleanup was not completed:', err);
+        });
+        const qFeedback = query(collection(db, 'feedback'));
+        unsubFeedback = onSnapshot(
+          qFeedback,
+          snap => {
+            const items: FeedbackItem[] = [];
+            snap.forEach(d => {
+              const data = d.data();
+              items.push({
+                id: d.id,
+                role: data.role || 'طالب متميز',
+                cls: data.cls || 'بدون تحديد',
+                text: data.text || '',
+                status: data.status || 'وارد جديد',
+                createdAt: data.createdAt || 0
+              });
+            });
+            items.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+            setCloudFeedback(items);
+          },
+          err => {
+            handleFirestoreError(err, OperationType.LIST, 'feedback');
+          }
+        );
+      } else {
+        setCloudFeedback([]);
+      }
     });
 
     // Listen to students leaderboard & progress
@@ -998,31 +1033,6 @@ export default function App() {
       }
     );
 
-    // Listen to parent feedback
-    const qFeedback = query(collection(db, 'feedback'));
-    const unsubFeedback = onSnapshot(
-      qFeedback,
-      snap => {
-        const items: FeedbackItem[] = [];
-        snap.forEach(d => {
-          const data = d.data();
-          items.push({
-            id: d.id,
-            role: data.role || 'طالب متميز',
-            cls: data.cls || 'بدون تحديد',
-            text: data.text || '',
-            status: data.status || 'وارد جديد',
-            createdAt: data.createdAt || 0
-          });
-        });
-        items.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-        setCloudFeedback(items);
-      },
-      err => {
-        handleFirestoreError(err, OperationType.LIST, 'feedback');
-      }
-    );
-
     // Listen to parent messages (خاصة وسرية ومباشرة بين ولي الأمر والمعلم)
     const qMessages = query(collection(db, 'parent_messages'));
     const unsubMessages = onSnapshot(
@@ -1061,7 +1071,7 @@ export default function App() {
       unsubStudents();
       unsubChallenges();
       unsubSettings();
-      unsubFeedback();
+      unsubFeedback?.();
       unsubMessages();
     };
   }, []);
@@ -2477,20 +2487,7 @@ export default function App() {
       await signInWithPopup(auth, googleProvider);
       showNotice('تم تسجيل الدخول بحساب Google بنجاح.');
     } catch (err) {
-      showNotice('تعذر تسجيل الدخول عبر نافذة Google، يمكنك استخدام رمز المعلم السريع.');
-    }
-  };
-
-  const handlePinAdminLogin = () => {
-    if (adminPinInput.trim() === (appSettings.adminPin || '1448')) {
-      setAdminUnlockedByPin(true);
-      try {
-        localStorage.setItem('LT_ADMIN_UNLOCKED', 'true');
-      } catch {}
-      setAdminPinInput('');
-      showNotice('مرحبًا بك أستاذ مساعد! تم فتح لوحة التحكم الكاملة.');
-    } else {
-      showNotice('رمز المعلم غير صحيح.');
+      showNotice('تعذر تسجيل الدخول عبر Google. تأكد من اختيار حساب المعلم المعتمد ثم حاول مجددًا.');
     }
   };
 
@@ -2501,7 +2498,6 @@ export default function App() {
       enableGames: Boolean(updated.enableGames),
       enableNafes: Boolean(updated.enableNafes),
       enableFeedback: Boolean(updated.enableFeedback),
-      adminPin: (updated.adminPin || '1448').slice(0, 12),
       platformManualStatus: updated.platformManualStatus || 'open',
       scheduleEnabled: Boolean(updated.scheduleEnabled),
       scheduledOpenAt: (updated.scheduledOpenAt || '').slice(0, 50),
@@ -5249,7 +5245,7 @@ export default function App() {
               <div style={{ textAlign: 'center', padding: '16px 8px' }}>
                 <h3>🔐 دخول المعلم المشرف (أ. مساعد سليمان الصخري)</h3>
                 <p className="sub">
-                  يمكنك الدخول عبر حساب Google المعتمد ({ADMIN_EMAIL}) أو عبر رمز المعلم السريع لإدارة قاعدة البيانات والتحديات والصلاحيات:
+                  الدخول إلى لوحة التحكم متاح فقط عبر حساب Google المعتمد ({ADMIN_EMAIL}) بعد التحقق من البريد الإلكتروني:
                 </p>
                 <div
                   style={{
@@ -5266,26 +5262,6 @@ export default function App() {
                   <button className="btn primary full" onClick={handleGoogleAdminLogin}>
                     🔑 تسجيل الدخول بحساب Google للمعلم
                   </button>
-                  <div style={{ fontSize: 13, color: 'var(--mut)', margin: '4px 0' }}>
-                    — أو أدخل رمز المعلم السريع (الافتراضي: 1448) —
-                  </div>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <input
-                      type="password"
-                      placeholder="رمز المعلم..."
-                      value={adminPinInput}
-                      onChange={e => setAdminPinInput(e.target.value)}
-                      style={{
-                        flex: 1,
-                        padding: '9px 12px',
-                        borderRadius: 12,
-                        border: '1px solid #c5deda'
-                      }}
-                    />
-                    <button className="btn green" onClick={handlePinAdminLogin}>
-                      دخول
-                    </button>
-                  </div>
                 </div>
               </div>
             ) : (
@@ -5424,10 +5400,6 @@ export default function App() {
                     className="btn coral"
                     style={{ padding: '6px 12px', fontSize: 12 }}
                     onClick={() => {
-                      setAdminUnlockedByPin(false);
-                      try {
-                        localStorage.removeItem('LT_ADMIN_UNLOCKED');
-                      } catch {}
                       if (firebaseUser) signOut(auth);
                       showNotice('تم تسجيل خروج المعلم بنجاح.');
                     }}
@@ -6510,14 +6482,6 @@ export default function App() {
                         <option value="yes">متاح لجميع الطلاب</option>
                         <option value="no">مغلق مؤقتًا</option>
                       </select>
-                    </div>
-                    <div className="field">
-                      <label>🔑 رمز الدخول السريع للمعلم (PIN)</label>
-                      <input
-                        value={appSettings.adminPin}
-                        maxLength={12}
-                        onChange={e => setAppSettings(s => ({ ...s, adminPin: e.target.value }))}
-                      />
                     </div>
                     {/* لوحة تحكم المعلم في إقفال وفتح الوحدات الدراسية (الوحدات 1، 2، 3) */}
                     <div
