@@ -9973,7 +9973,7 @@ export default function App() {
             <strong>⚽ لغتي تحكي — ركلات الترجيح</strong>
             <button type="button" onClick={() => setShowPenaltyGame(false)} style={{ border: 0, borderRadius: 10, padding: '6px 14px', background: '#fff', color: '#0d6067', fontWeight: 900 }}>العودة للتطبيق ✕</button>
           </div>
-          <iframe title="لعبة ركلات الترجيح" src={`/penalty.html?embedded=1&studentId=${encodeURIComponent(activeId || '')}&studentName=${encodeURIComponent(currentProfile?.name || 'طالب لغتي')}`} allow="autoplay; fullscreen" style={{ width: '100%', flex: 1, minHeight: 0, border: 0, background: '#f1f5ee' }} />
+          <iframe title="لعبة ركلات الترجيح" src={`/penalty.html?embedded=1&studentId=${encodeURIComponent(activeId || '')}&studentName=${encodeURIComponent((currentProfile?.name || 'طالب لغتي').trim().split(/\\s+/)[0] || 'طالب لغتي')}`} allow="autoplay; fullscreen" style={{ width: '100%', flex: 1, minHeight: 0, border: 0, background: '#f1f5ee' }} />
         </div>
       )}
 
