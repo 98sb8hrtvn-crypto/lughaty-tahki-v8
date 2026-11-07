@@ -441,7 +441,7 @@ const PENALTY_PARAMS = new URLSearchParams(window.location.search);
 const IS_EMBEDDED = PENALTY_PARAMS.get('embedded') === '1';
 const EXTERNAL_STUDENT_ID = PENALTY_PARAMS.get('studentId') || '';
 const EXTERNAL_STUDENT_NAME = PENALTY_PARAMS.get('studentName') || '';
-const scopedStorageKey = (key: string) => key === 'pk_prog' && EXTERNAL_STUDENT_ID ? `pk_prog_${EXTERNAL_STUDENT_ID}` : key;
+const scopedStorageKey = (key: string) => EXTERNAL_STUDENT_ID && (key === 'pk_prog' || key === 'pk_question_awards') ? `${key}_${EXTERNAL_STUDENT_ID}` : key;
 const LS = {
   g(k: string) {
     try { return JSON.parse(localStorage.getItem(scopedStorageKey(k)) || ''); } catch { return null; }
@@ -3618,10 +3618,15 @@ export default function App() {
 
           // Award educational point immediately
           if (isCorrect) {
-            s.eduScore += 1;
-            setEduScoreDisplay(s.eduScore);
-            if (IS_EMBEDDED && EXTERNAL_STUDENT_ID && window.parent !== window) {
-              window.parent.postMessage({ type: 'LT_PENALTY_AWARD', studentId: EXTERNAL_STUDENT_ID, questionId: qItem.id }, window.location.origin);
+            const awardedIds: string[] = LS.g('pk_question_awards') || [];
+            const isFirstCorrectAnswer = !awardedIds.includes(qItem.id);
+            if (isFirstCorrectAnswer) {
+              LS.s('pk_question_awards', [...awardedIds, qItem.id]);
+              s.eduScore += 1;
+              setEduScoreDisplay(s.eduScore);
+              if (IS_EMBEDDED && EXTERNAL_STUDENT_ID && window.parent !== window) {
+                window.parent.postMessage({ type: 'LT_PENALTY_AWARD', studentId: EXTERNAL_STUDENT_ID, questionId: qItem.id }, window.location.origin);
+              }
             }
           }
 
