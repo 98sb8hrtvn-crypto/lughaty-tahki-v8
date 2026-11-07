@@ -2455,20 +2455,13 @@ export default function App() {
 
       // --- Requirement 4: Varied & Anatomically Realistic Goal Celebrations ---
       if (gc) {
-        if (isRonaldoSiuuu) {
-          // Cristiano Ronaldo "Siuuu": Arms swept back and down
-          a1 = sDir * 0.42;
-          a2 = a1 + sDir * 0.18;
+        // احتفال موحّد: قفزة واحدة مع رفع الذراع اليمنى عموديًا دون وضعية Siuuu.
+        if (sDir === 1) {
+          a1 = 3.05;
+          a2 = 3.05;
         } else {
-          // Unified Goal Celebration:
-          // Single jump with RIGHT arm raised straight up vertically into the air
-          if (sDir === 1) {
-            a1 = 3.05;
-            a2 = 3.05;
-          } else {
-            a1 = -0.3;
-            a2 = -0.2;
-          }
+          a1 = -0.3;
+          a2 = -0.2;
         }
       }
 
