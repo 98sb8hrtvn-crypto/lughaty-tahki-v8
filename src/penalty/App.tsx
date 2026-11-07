@@ -3370,29 +3370,19 @@ export default function App() {
       }
     };
 
-    // مهلة أمان قصوى احتياطية لمنع أي تعليق
-    const fallbackTimer = window.setTimeout(doAdvance, 7000);
-
-    // الاستماع لانتهاء التعليق الصوتي
+    // لا يوجد مؤقت يقطع التعليق: الانتقال بعد انتهاء الصوت فعليًا واكتمال حركة الركلة.
     audioStateRef.current.pendingOnEnded = () => {
       const elapsed = performance.now() - finishStartTime;
       if (elapsed < 2600) {
-        setTimeout(() => {
-          window.clearTimeout(fallbackTimer);
-          doAdvance();
-        }, 2600 - elapsed);
+        setTimeout(doAdvance, 2600 - elapsed);
       } else {
-        window.clearTimeout(fallbackTimer);
         doAdvance();
       }
     };
 
-    // فحص دوري عند اكتمال الحركة المرئية (2.7 ثانية) في حال انتهاء الصوت أو كتمه مسبقاً
+    // إذا كان الصوت مكتومًا أو لم يبدأ، ننتظر اكتمال حركة الركلة فقط.
     setTimeout(() => {
-      if (!audioStateRef.current.isPlaying) {
-        window.clearTimeout(fallbackTimer);
-        doAdvance();
-      }
+      if (!audioStateRef.current.isPlaying) doAdvance();
     }, 2700);
   };
 
