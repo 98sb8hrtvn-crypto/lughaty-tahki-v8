@@ -126,6 +126,7 @@ interface StudentProfile {
   raceCompletedAt?: number;
   finishLineReached?: boolean;
   completedQuestionIds?: string[];
+  penaltyAwardedQuestionIds?: string[];
   gameCooldowns?: Record<string, number>;
   registeredAt?: number;
   lastActiveAt?: number;
@@ -595,6 +596,7 @@ export default function App() {
 
   // Games state (متجددة بدون تكرار)
   const [gameView, setGameView] = useState<'menu' | 'detective' | 'order' | 'meaning' | 'speed'>('menu');
+  const [showPenaltyGame, setShowPenaltyGame] = useState(false);
   const [gameDetectiveList, setGameDetectiveList] = useState<DetectiveQuestion[]>([]);
   const [detIndex, setDetIndex] = useState(0);
   const [detScore, setDetScore] = useState(0);
@@ -1284,9 +1286,11 @@ export default function App() {
     });
   };
 
-  const addPoints = (ptsToAdd: number) => {
+  const addPoints = (ptsToAdd: number, uniqueKey?: string) => {
     if (!currentProfile || ptsToAdd <= 0) return;
     updateCurrentProfile(p => {
+      const alreadyAwarded = p.penaltyAwardedQuestionIds || [];
+      if (uniqueKey && alreadyAwarded.includes(uniqueKey)) return p;
       const nextBadges = [...p.badges];
       const newPoints = p.points + ptsToAdd;
 
@@ -1346,11 +1350,28 @@ export default function App() {
       return {
         ...p,
         points: newPoints,
-        badges: nextBadges
+        badges: nextBadges,
+        ...(uniqueKey ? { penaltyAwardedQuestionIds: [...alreadyAwarded, uniqueKey] } : {})
       };
     });
   };
 
+  useEffect(() => {
+    const handlePenaltyMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      const data = event.data;
+      if (!data || typeof data !== 'object') return;
+      if (data.type === 'LT_PENALTY_EXIT') {
+        setShowPenaltyGame(false);
+        return;
+      }
+      if (data.type === 'LT_PENALTY_AWARD' && typeof data.questionId === 'string' && data.studentId === activeId && activeId) {
+        addPoints(1, `penalty:${data.questionId}`);
+      }
+    };
+    window.addEventListener('message', handlePenaltyMessage);
+    return () => window.removeEventListener('message', handlePenaltyMessage);
+  }, [activeId, currentProfile]);
 
   const needProfile = (): boolean => {
     if (!currentProfile) {
@@ -1918,6 +1939,21 @@ export default function App() {
     if (speedTimerRef.current) clearInterval(speedTimerRef.current);
     setGameView('menu');
     setActiveModal('gamesModal');
+  };
+
+  const openPenaltyGame = () => {
+    if (!needProfile()) return;
+    if (!appSettings.enableGames) {
+      showNotice('مركز الألعاب مغلق مؤقتًا من قِبل المعلم.');
+      return;
+    }
+    const u1 = appSettings.unit1Open !== false || isTeacherAdmin;
+    const u2 = appSettings.unit2Open === true || isTeacherAdmin;
+    const u3 = appSettings.unit3Open === true || isTeacherAdmin;
+    try {
+      localStorage.setItem('pk_stage_locks', JSON.stringify([u1, u2, u3, u1 && u2, u1 && u2 && u3]));
+    } catch {}
+    setShowPenaltyGame(true);
   };
 
   // دالة استخراج الوحدات المفتوحة والمصرح بظهور أسئلتها في الألعاب
@@ -8520,6 +8556,14 @@ export default function App() {
                     )}
                   </div>
 
+                  <div className="game" style={{ marginBottom: 14, border: '1.5px solid #86efac', background: 'linear-gradient(135deg, #f0fdf4, #ffffff)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <h3 style={{ margin: 0 }}>⚽ ركلات الترجيح</h3>
+                      <span style={{ fontSize: 11, background: '#dcfce7', color: '#166534', padding: '3px 8px', borderRadius: 8, fontWeight: 800 }}>بطولة لغتي التعليمية</span>
+                    </div>
+                    <p style={{ fontSize: 13, color: '#446468', margin: '6px 0 12px' }}>أجب عن الأسئلة اللغوية، وسدّد أو تصدَّ في خمس مراحل. تُضاف النقطة إلى رصيدك الأصلي مرة واحدة لكل سؤال صحيح.</p>
+                    <button className="btn green full" onClick={openPenaltyGame}>ابدأ ركلات الترجيح ⚽</button>
+                  </div>
                   <div id="gameMenu" className="gameGrid">
                     {/* 1. المحقق اللغوي */}
                     {(() => {
@@ -9923,7 +9967,17 @@ export default function App() {
         </div>
       )}
 
-      {/* Parent-Teacher Private Messaging Modal */}
+      {showPenaltyGame && (
+        <div role="dialog" aria-modal="true" aria-label="لعبة ركلات الترجيح" style={{ position: 'fixed', inset: 0, zIndex: 99999, background: '#071b20', display: 'flex', flexDirection: 'column', paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
+          <div style={{ height: 48, minHeight: 48, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 12px', background: '#0d6067', color: '#fff' }}>
+            <strong>⚽ لغتي تحكي — ركلات الترجيح</strong>
+            <button type="button" onClick={() => setShowPenaltyGame(false)} style={{ border: 0, borderRadius: 10, padding: '6px 14px', background: '#fff', color: '#0d6067', fontWeight: 900 }}>العودة للتطبيق ✕</button>
+          </div>
+          <iframe title="لعبة ركلات الترجيح" src={`/penalty.html?embedded=1&studentId=${encodeURIComponent(activeId || '')}&studentName=${encodeURIComponent(currentProfile?.name || 'طالب لغتي')}`} allow="autoplay; fullscreen" style={{ width: '100%', flex: 1, minHeight: 0, border: 0, background: '#f1f5ee' }} />
+        </div>
+      )}
+
+      {/* Parent-Teacher Private Messaging Modal */
       <ParentMessagesModal
         show={activeModal === 'parentMessagesModal'}
         onClose={() => setActiveModal(null)}
