@@ -864,8 +864,45 @@ export default function App() {
 
   // Listen to Firebase Auth state and real-time Firestore collections
   useEffect(() => {
+    let unsubFeedback: (() => void) | null = null;
     const unsubAuth = onAuthStateChanged(auth, u => {
       setFirebaseUser(u);
+      if (unsubFeedback) {
+        unsubFeedback();
+        unsubFeedback = null;
+      }
+      const verifiedAdmin = Boolean(
+        u?.emailVerified &&
+        u.email &&
+        u.email.toLowerCase() === ADMIN_EMAIL.toLowerCase()
+      );
+      if (verifiedAdmin) {
+        const qFeedback = query(collection(db, 'feedback'));
+        unsubFeedback = onSnapshot(
+          qFeedback,
+          snap => {
+            const items: FeedbackItem[] = [];
+            snap.forEach(d => {
+              const data = d.data();
+              items.push({
+                id: d.id,
+                role: data.role || 'طالب متميز',
+                cls: data.cls || 'بدون تحديد',
+                text: data.text || '',
+                status: data.status || 'وارد جديد',
+                createdAt: data.createdAt || 0
+              });
+            });
+            items.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+            setCloudFeedback(items);
+          },
+          err => {
+            handleFirestoreError(err, OperationType.LIST, 'feedback');
+          }
+        );
+      } else {
+        setCloudFeedback([]);
+      }
     });
 
     // Listen to students leaderboard & progress
@@ -987,31 +1024,6 @@ export default function App() {
       }
     );
 
-    // Listen to parent feedback
-    const qFeedback = query(collection(db, 'feedback'));
-    const unsubFeedback = onSnapshot(
-      qFeedback,
-      snap => {
-        const items: FeedbackItem[] = [];
-        snap.forEach(d => {
-          const data = d.data();
-          items.push({
-            id: d.id,
-            role: data.role || 'طالب متميز',
-            cls: data.cls || 'بدون تحديد',
-            text: data.text || '',
-            status: data.status || 'وارد جديد',
-            createdAt: data.createdAt || 0
-          });
-        });
-        items.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-        setCloudFeedback(items);
-      },
-      err => {
-        handleFirestoreError(err, OperationType.LIST, 'feedback');
-      }
-    );
-
     // Listen to parent messages (خاصة وسرية ومباشرة بين ولي الأمر والمعلم)
     const qMessages = query(collection(db, 'parent_messages'));
     const unsubMessages = onSnapshot(
@@ -1050,7 +1062,7 @@ export default function App() {
       unsubStudents();
       unsubChallenges();
       unsubSettings();
-      unsubFeedback();
+      unsubFeedback?.();
       unsubMessages();
     };
   }, []);
