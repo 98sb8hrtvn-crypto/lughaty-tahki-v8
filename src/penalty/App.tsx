@@ -3793,15 +3793,47 @@ export default function App() {
   };
 
   const confirmRoundTransition = () => {
+    const targetStage = nextTargetStage;
+    const targetQuestions = STAGES[targetStage];
+
+    // Reject an invalid/incomplete stage before changing the live game state.
+    if (!Array.isArray(targetQuestions) || targetQuestions.length < 10 ||
+        targetQuestions.slice(0, 10).some(q => !q || !q.id || !q.lesson ||
+          !Array.isArray(q.options) || q.options.length !== 4)) {
+      showStatusMsg('تعذر بدء المرحلة التالية: بيانات الأسئلة غير مكتملة. لم نفقد تقدمك.');
+      setShowRoundTransitionModal(false);
+      setShowStageSummaryModal(true);
+      return;
+    }
+
     setShowRoundTransitionModal(false);
     const s = gameStateRef.current;
-    s.stage = nextTargetStage;
+
+    // Explicitly restore the playable state when crossing a stage boundary.
+    // This prevents a stale intro/ready state from keeping nextQ() hidden.
+    s.stage = targetStage;
     s.started = true;
+    s.introInProgress = false;
+    s.ended = false;
+    s.stageDone = false;
+    introPlayingRef.current = false;
+    gameStartStateRef.current = 'playing';
+    setGameStartState('playing');
+
+    if (qRef.current) {
+      qRef.current.innerHTML = '';
+      qRef.current.style.display = 'block';
+      qRef.current.style.visibility = 'visible';
+      qRef.current.style.opacity = '1';
+      qRef.current.style.pointerEvents = 'auto';
+    }
+
+    // newStage() resets the round and calls nextQ(), which schedules the
+    // five-second waiting commentary itself. Do not schedule it a second time.
     newStage();
-    const isStriker = s.round % 2 === 0;
-    const qItem = STAGES[s.stage][s.round];
-    setMsgText(`${isStriker ? 'أنت المسدد ⚽' : 'أنت الحارس 🧤'} · ${qItem.lesson}`);
-    startWaitingAudioSequence();
+
+    const firstQuestion = targetQuestions[0];
+    setMsgText(`أنت المسدد ⚽ · ${firstQuestion.lesson}`);
   };
 
   const handleHintClick = () => {
