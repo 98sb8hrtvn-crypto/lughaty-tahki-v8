@@ -2046,11 +2046,17 @@ export default function App() {
 
   const openPenaltyGame = () => {
     if (!needProfile()) return;
-    const u1 = appSettings.unit1Open !== false || isTeacherAdmin;
-    const u2 = appSettings.unit2Open === true || isTeacherAdmin;
-    const u3 = appSettings.unit3Open === true || isTeacherAdmin;
+    // Preserve the teacher's saved stage permissions between visits.
+    // Seed them from the main-app unit settings only on the first visit
+    // or when the saved value is missing/invalid.
     try {
-      localStorage.setItem('pk_stage_locks', JSON.stringify([u1, u2, u3, u1 && u2, u1 && u2 && u3]));
+      const savedLocks = JSON.parse(localStorage.getItem('pk_stage_locks') || 'null');
+      if (!Array.isArray(savedLocks) || savedLocks.length !== 5 || savedLocks.some(value => typeof value !== 'boolean')) {
+        const u1 = appSettings.unit1Open !== false || isTeacherAdmin;
+        const u2 = appSettings.unit2Open === true || isTeacherAdmin;
+        const u3 = appSettings.unit3Open === true || isTeacherAdmin;
+        localStorage.setItem('pk_stage_locks', JSON.stringify([u1, u2, u3, u1 && u2, u1 && u2 && u3]));
+      }
     } catch {}
     setShowPenaltyGame(true);
   };
