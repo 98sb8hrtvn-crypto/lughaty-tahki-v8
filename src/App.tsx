@@ -495,7 +495,7 @@ export default function App() {
   const [feedbackReplyDrafts, setFeedbackReplyDrafts] = useState<Record<string, string>>({});
   const [feedbackReplyingId, setFeedbackReplyingId] = useState<string | null>(null);
   const [penaltyResults, setPenaltyResults] = useState<PenaltyResultEvent[]>([]);
-  const [appSettings, setAppSettings] = useState<AppSettings>(() => {}
+  const [appSettings, setAppSettings] = useState<AppSettings>(() => {
     try {
       const saved = localStorage.getItem('LT_GLOBAL_SETTINGS');
       if (saved) {
