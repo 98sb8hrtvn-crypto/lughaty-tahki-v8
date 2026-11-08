@@ -134,6 +134,8 @@ interface StudentProfile {
   gradeLevel?: string;
   lastActivityType?: string;
   updatedAt?: number;
+  pointsResetAt?: number;
+  scoredQuestions?: string[];
 }
 
 export interface CloudStudentRow {
@@ -159,6 +161,8 @@ export interface CloudStudentRow {
   raceCompletedAt?: number;
   finishLineReached?: boolean;
   updatedAt: number;
+  pointsResetAt?: number;
+  scoredQuestions?: string[];
   registeredAt?: number;
   lastActiveAt?: number;
   sessionCount?: number;
@@ -465,6 +469,11 @@ export default function App() {
   });
   const [adminPinInput, setAdminPinInput] = useState<string>('');
   const [cloudStudents, setCloudStudents] = useState<CloudStudentRow[]>([]);
+  const [cloudStudentsLoading, setCloudStudentsLoading] = useState<boolean>(true);
+  const [cloudStudentsError, setCloudStudentsError] = useState<string | null>(null);
+  const [trackRefreshTick, setTrackRefreshTick] = useState<number>(0);
+  const [inlineEditPointsId, setInlineEditPointsId] = useState<string | null>(null);
+  const [inlineEditPointsInput, setInlineEditPointsInput] = useState<string>('');
   const [customChallenges, setCustomChallenges] = useState<(DailyChallengeItem & { docId: string })[]>([]);
   const [cloudFeedback, setCloudFeedback] = useState<FeedbackItem[]>([]);
   const [appSettings, setAppSettings] = useState<AppSettings>(() => {
@@ -657,7 +666,22 @@ export default function App() {
     return () => clearInterval(timer);
   }, []);
 
-  const currentProfile = activeId && profiles[activeId] ? profiles[activeId] : null;
+  // ملف الطالب مع ضمان التطابق اللحظي الكامل لرصيد النقاط مع السحابة والمضمار ولوحة المعلم
+  const currentProfile = useMemo<StudentProfile | null>(() => {
+    if (!activeId || !profiles[activeId]) return null;
+    const local = profiles[activeId];
+    const cloud = cloudStudents.find(
+      s => s.profileId === activeId || (s.code === local.code && s.name === local.name)
+    );
+    if (cloud && typeof cloud.points === 'number' && cloud.points !== local.points) {
+      return {
+        ...local,
+        points: cloud.points,
+        pointsResetAt: cloud.pointsResetAt ?? local.pointsResetAt
+      };
+    }
+    return local;
+  }, [activeId, profiles, cloudStudents]);
   const studentMistakes = currentProfile?.mistakes || [];
   const isTeacherAdmin =
     adminUnlockedByPin ||
@@ -834,12 +858,30 @@ export default function App() {
   const syncProfileToCloud = async (profileId: string, p: StudentProfile) => {
     const safeId = toSafeDocId(profileId);
     const daily = p.dailyChallenge || localDailyState;
+
+    // حماية الرصيد: التحقق مما إذا كان السيرفر يحمل تصفيرًا أو معايرة أحدث من المعلم
+    const existingCloud = cloudStudents.find(
+      s => s.profileId === profileId || s.docId === safeId
+    );
+    let targetPoints = Math.max(0, Math.min(1000000, p.points || 0));
+    let targetResetAt = p.pointsResetAt;
+
+    if (existingCloud) {
+      const serverResetAt = existingCloud.pointsResetAt || 0;
+      const localResetAt = p.pointsResetAt || 0;
+      // إذا كان السيرفر يحمل تاريخ تصفير أو معايرة أحدث، لا يجوز للعميل المحلي استعادة الرصيد القديم
+      if (serverResetAt > localResetAt) {
+        targetPoints = existingCloud.points;
+        targetResetAt = serverResetAt;
+      }
+    }
+
     const payload: Record<string, any> = {
       profileId: profileId.slice(0, 100),
       name: p.name.slice(0, 80),
       code: p.code.slice(0, 4),
       cls: p.cls.slice(0, 10),
-      points: Math.max(0, Math.min(1000000, p.points || 0)),
+      points: targetPoints,
       badges: (p.badges || []).slice(0, 20),
       correct: Math.max(0, p.correct || 0),
       attempts: Math.max(0, p.attempts || 0),
@@ -859,6 +901,9 @@ export default function App() {
       lastActiveAt: p.lastActiveAt ? Number(p.lastActiveAt) : Date.now(),
       updatedAt: Date.now()
     };
+    if (typeof targetResetAt === 'number') {
+      payload.pointsResetAt = targetResetAt;
+    }
     if (p.registeredAt) {
       payload.registeredAt = Number(p.registeredAt);
     }
@@ -912,6 +957,7 @@ export default function App() {
               raceCompletedAt: Number(data.raceCompletedAt || 0),
               finishLineReached: Boolean(data.finishLineReached),
               updatedAt: data.updatedAt || 0,
+              pointsResetAt: typeof data.pointsResetAt === 'number' ? data.pointsResetAt : undefined,
               registeredAt: data.registeredAt ? Number(data.registeredAt) : undefined,
               lastActiveAt: data.lastActiveAt ? Number(data.lastActiveAt) : data.updatedAt ? Number(data.updatedAt) : undefined,
               sessionCount: typeof data.sessionCount === 'number' ? Number(data.sessionCount) : undefined,
@@ -923,8 +969,55 @@ export default function App() {
         });
         rows.sort((a, b) => b.points - a.points || b.correct - a.correct);
         setCloudStudents(rows);
+        setCloudStudentsLoading(false);
+        setCloudStudentsError(null);
+
+        // مزامنة فورية وتلقائية للملفات المحلية لمنع عودة النقاط الملغاة أو المصفّرة
+        setProfiles(prevProfiles => {
+          let hasChanges = false;
+          const nextProfiles = { ...prevProfiles };
+          rows.forEach(serverSt => {
+            const pid = serverSt.profileId;
+            const local = nextProfiles[pid];
+            if (local) {
+              const serverResetAt = serverSt.pointsResetAt || 0;
+              const localResetAt = local.pointsResetAt || 0;
+              const serverUpdatedAt = serverSt.updatedAt || 0;
+              const localUpdatedAt = local.updatedAt || 0;
+
+              // إذا قام المعلم بتصفير أو معايرة النقاط على السيرفر بتوقيت أحدث، أو حدث تعديل بنقاط السيرفر
+              if (
+                (serverResetAt > 0 && serverResetAt >= localResetAt && local.points !== serverSt.points) ||
+                (serverUpdatedAt >= localUpdatedAt && local.points !== serverSt.points)
+              ) {
+                hasChanges = true;
+                nextProfiles[pid] = {
+                  ...local,
+                  points: serverSt.points,
+                  pointsResetAt: serverResetAt || localResetAt,
+                  updatedAt: Math.max(serverUpdatedAt, localUpdatedAt)
+                };
+                if (serverSt.points === 0) {
+                  try {
+                    localStorage.removeItem(`LT_SCORED_LEDGER_${pid}`);
+                    localStorage.removeItem(`LT_SCORED_LEDGER_${local.code}`);
+                  } catch {}
+                }
+              }
+            }
+          });
+          if (hasChanges) {
+            try {
+              localStorage.setItem('LT_PROFILES', JSON.stringify(nextProfiles));
+            } catch {}
+            return nextProfiles;
+          }
+          return prevProfiles;
+        });
       },
       err => {
+        setCloudStudentsLoading(false);
+        setCloudStudentsError('تعذر تحميل رصيد فرسان المضمار من قاعدة البيانات السحابية.');
         handleFirestoreError(err, OperationType.LIST, 'students');
       }
     );
@@ -942,7 +1035,7 @@ export default function App() {
               docId: d.id,
               day: Number(data.day) || 11,
               level: data.level || 'صعب جدًا',
-              points: Number(data.points) || 30,
+              points: 10, // تحدي اليوم يمنح حصراً 10 نقاط عملاً بالقواعد
               unitTopic: data.unitTopic || 'تحدي المعلم',
               question: data.question,
               options: data.options,
@@ -1194,6 +1287,15 @@ export default function App() {
         }
       };
 
+      // التحقق من احتساب نقاط سؤال التحدي اليومي لأول مرة فقط
+      const isFirstScore = recordQuestionScore(
+        activeId || 'guest',
+        'daily_challenge',
+        `day_${currentDailyChallenge.day}_${currentDailyChallenge.question}`
+      );
+      // سؤال «تحدي اليوم» فقط = 10 نقاط للإجابة الصحيحة، وصفر نقطة للإعادة أو التكرار
+      const dailyPointsToAdd = isFirstScore ? 10 : 0;
+
       if (currentProfile && activeId) {
         updateCurrentProfile(p => {
           const nextBadges = [...p.badges];
@@ -1211,8 +1313,8 @@ export default function App() {
           }
           return {
             ...p,
-            points: p.points + currentDailyChallenge.points,
-            correct: p.correct + 1,
+            points: p.points + dailyPointsToAdd,
+            correct: p.correct + (isFirstScore ? 1 : 0),
             attempts: p.attempts + 1,
             badges: nextBadges,
             dailyChallenge: newDailyState
@@ -1223,7 +1325,9 @@ export default function App() {
       }
 
       showNotice(
-        `🎉 أحسنت! وصلت للحل الصحيح في ${finalSec} ثانية وحصلت على +${currentDailyChallenge.points} نقطة! سيفتح لك السؤال التالي الأصعب بعد 24 ساعة من الآن.`
+        isFirstScore
+          ? `🎉 أحسنت! وصلت للحل الصحيح في ${finalSec} ثانية وحصلت على +10 نقاط (تحدي اليوم)! سيفتح لك السؤال التالي الأصعب بعد 24 ساعة من الآن.`
+          : `🎉 أحسنت! حلك صحيح، ونظرًا لسابقة حل هذا السؤال فلن تُضاف نقاط إضافية للإعادة.`
       );
     } else {
       setDailyWrongChoices(prev => [...prev, optIdx]);
@@ -1779,11 +1883,10 @@ export default function App() {
           } else {
             existing.unshift(record);
           }
-          // عند الخطأ يتأخر الحصان إلى الخلف بخصم طفيف من النقاط
-          const adjustedPoints = Math.max(0, p.points - 2);
+          // سياسة احتساب النقاط: الإجابة الخاطئة = صفر نقطة (دون خصم من رصيد الطالب)
           return {
             ...p,
-            points: adjustedPoints,
+            points: p.points,
             mistakes: existing
           };
         });
@@ -2658,7 +2761,7 @@ export default function App() {
         ...p,
         finishLineReached: true,
         raceCompletedAt: p.raceCompletedAt || Date.now(),
-        points: isFirstTime ? p.points + 50 : p.points,
+        points: p.points, // تتويج ووسام شرفي بدون نقاط إضافية عملاً بالقواعد الصارمة
         badges: nextBadges
       };
     });
@@ -2669,7 +2772,7 @@ export default function App() {
         cls: currentProfile.cls,
         type: 'lead',
         text: `🏆 إنجاز تاريخي: الفارس ${currentProfile.name} استكمل جميع المتطلبات وأتم السباق بنجاح!`,
-        highlight: `حصد وسام «فاتح خط النهاية الذهبي» و +50⭐ نقطة!`
+        highlight: `حصد وسام «فاتح خط النهاية الذهبي» والتتويج في قمة الفرسان!`
       });
     }
 
@@ -2903,8 +3006,9 @@ export default function App() {
     st: CloudStudentRow,
     changes: Partial<CloudStudentRow>
   ) => {
-    const merged: CloudStudentRow = { ...st, ...changes, updatedAt: Date.now() };
-    const payload = {
+    const now = Date.now();
+    const merged: CloudStudentRow = { ...st, ...changes, updatedAt: now };
+    const payload: Record<string, any> = {
       profileId: merged.profileId.slice(0, 100),
       name: merged.name.slice(0, 80),
       code: merged.code.slice(0, 4),
@@ -2922,33 +3026,65 @@ export default function App() {
       lastQuizScore: Math.max(0, merged.lastQuizScore),
       lastQuizTotal: Math.max(0, merged.lastQuizTotal),
       isBlocked: Boolean(merged.isBlocked),
-      updatedAt: Date.now()
+      updatedAt: now
     };
+    if (typeof merged.pointsResetAt === 'number') {
+      payload.pointsResetAt = merged.pointsResetAt;
+    }
     try {
       await setDoc(doc(db, 'students', st.docId), payload);
       // Also update local state if this student is on this device
-      if (profiles[st.profileId]) {
-        setProfiles(prev => ({
+      setProfiles(prev => {
+        if (!prev[st.profileId]) return prev;
+        const next = {
           ...prev,
           [st.profileId]: {
             ...prev[st.profileId],
             name: payload.name,
             code: payload.code,
             points: payload.points,
+            pointsResetAt: typeof merged.pointsResetAt === 'number' ? merged.pointsResetAt : prev[st.profileId].pointsResetAt,
             nafesStageIndex: payload.nafesStageIndex,
             isBlocked: payload.isBlocked,
             dailyChallenge: {
               ...(prev[st.profileId].dailyChallenge || { currentIndex: 0, nextUnlockMs: 0, solvedDays: {} }),
               currentIndex: payload.dailyCurrentIndex,
               nextUnlockMs: payload.dailyNextUnlockMs
-            }
+            },
+            updatedAt: now
           }
-        }));
-      }
+        };
+        try {
+          localStorage.setItem('LT_PROFILES', JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+      // تحديث فوري للحالة السحابية المحلية لضمان التزامن اللحظي للمضمار ولوحة المعلم
+      setCloudStudents(prev =>
+        prev.map(item =>
+          item.profileId === st.profileId || item.docId === st.docId
+            ? { ...item, ...payload }
+            : item
+        ).sort((a, b) => b.points - a.points || b.correct - a.correct)
+      );
       showNotice(`تم تحديث بيانات الطالب (${payload.name}) في قاعدة البيانات.`);
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, `students/${st.docId}`);
     }
+  };
+
+  // تعديل وضبط نقاط طالب لأي قيمة يحددها المعلم مع التزامن الكامل الفوري
+  const handleAdminSetStudentPoints = async (st: CloudStudentRow, newPoints: number) => {
+    const validPoints = Math.max(0, Math.floor(newPoints));
+    const now = Date.now();
+    await handleAdminModifyStudent(st, { points: validPoints, pointsResetAt: now });
+    if (validPoints === 0) {
+      try {
+        localStorage.removeItem(`LT_SCORED_LEDGER_${st.profileId}`);
+        localStorage.removeItem(`LT_SCORED_LEDGER_${st.code}`);
+      } catch {}
+    }
+    showNotice(`✅ تم تعديل وضبط رصيد الطالب «${st.name}» إلى ${validPoints}⭐ في قاعدة البيانات والمضمار ولوحة التحكم.`);
   };
 
   // تصفير وحذف نقاط طالب لوحده
@@ -2960,7 +3096,28 @@ export default function App() {
     ) {
       return;
     }
-    await handleAdminModifyStudent(st, { points: 0 });
+    const resetTime = Date.now();
+    await handleAdminModifyStudent(st, { points: 0, pointsResetAt: resetTime });
+    try {
+      localStorage.removeItem(`LT_SCORED_LEDGER_${st.profileId}`);
+      localStorage.removeItem(`LT_SCORED_LEDGER_${st.code}`);
+    } catch {}
+    setProfiles(prev => {
+      if (!prev[st.profileId]) return prev;
+      const next = {
+        ...prev,
+        [st.profileId]: {
+          ...prev[st.profileId],
+          points: 0,
+          pointsResetAt: resetTime,
+          updatedAt: resetTime
+        }
+      };
+      try {
+        localStorage.setItem('LT_PROFILES', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
     showNotice(`✅ تم تصفير وحذف نقاط الطالب «${st.name}» بنجاح (0⭐)!`);
   };
 
@@ -2979,24 +3136,34 @@ export default function App() {
       return;
     }
     try {
+      const resetTime = Date.now();
       const promises = cloudStudents.map(st =>
         setDoc(
           doc(db, 'students', st.docId),
           {
             ...st,
             points: 0,
-            updatedAt: Date.now()
+            pointsResetAt: resetTime,
+            updatedAt: resetTime
           },
           { merge: true }
         )
       );
       await Promise.all(promises);
 
+      // مسح سجل النقاط المحلي للطلاب
+      cloudStudents.forEach(st => {
+        try {
+          localStorage.removeItem(`LT_SCORED_LEDGER_${st.profileId}`);
+          localStorage.removeItem(`LT_SCORED_LEDGER_${st.code}`);
+        } catch {}
+      });
+
       // تحديث الملفات المحلية إن وُجدت
       setProfiles(prev => {
         const next = { ...prev };
         Object.keys(next).forEach(pid => {
-          next[pid] = { ...next[pid], points: 0 };
+          next[pid] = { ...next[pid], points: 0, pointsResetAt: resetTime, updatedAt: resetTime };
         });
         try {
           localStorage.setItem('LT_PROFILES', JSON.stringify(next));
@@ -3004,9 +3171,125 @@ export default function App() {
         return next;
       });
 
+      // تحديث فوري للحالة السحابية المحلية لضمان التزامن اللحظي للمضمار ولوحة المعلم
+      setCloudStudents(prev =>
+        prev.map(item => ({ ...item, points: 0, pointsResetAt: resetTime, updatedAt: resetTime }))
+      );
+
       showNotice(`✅ تم تصفير وحذف نقاط جميع الطلاب بنجاح (${count} طالب أصبح رصيدهم 0⭐)!`);
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, 'students/reset_all_points');
+    }
+  };
+
+  // تدقيق ومراجعة الأرصدة المتضخمة السابقة لمقارنتها بالنشاط الموثق
+  const auditedInflatedStudents = useMemo(() => {
+    return cloudStudents
+      .map(st => {
+        const verifiedCorrect = Math.max(0, st.correct || 0);
+        const verifiedDailyDays = Math.max(0, st.dailyCurrentIndex || 0);
+        // سقف النقاط النظامية الموثقة: نقطة لكل إجابة صحيحة + 10 نقاط لكل تحدي يومي مكتمل
+        const expectedMaxPoints = verifiedCorrect + (verifiedDailyDays * 10);
+        const isInflated = st.points > (expectedMaxPoints + 15) || (st.points > 100 && st.points > expectedMaxPoints * 1.4);
+        return {
+          student: st,
+          verifiedCorrect,
+          verifiedDailyDays,
+          expectedMaxPoints,
+          isInflated,
+          discrepancy: Math.max(0, st.points - expectedMaxPoints)
+        };
+      })
+      .filter(item => item.isInflated);
+  }, [cloudStudents]);
+
+  // معايرة رصيد طالب متضخم إلى النقاط النظامية الموثقة بموافقة المعلم
+  const handleAdminCalibrateStudentPoints = async (
+    st: CloudStudentRow,
+    calibratedPoints: number
+  ) => {
+    if (
+      !window.confirm(
+        `هل تريد اعتماد ومعايرة رصيد الطالب «${st.name}» (فصل ${st.cls})؟\n\nالرصيد المتضخم الحالي: ${st.points}⭐\nالرصيد النظامي الموثق: ${calibratedPoints}⭐ (بناءً على ${st.correct} إجابة صحيحة موثقة + التحديات اليومية)`
+      )
+    ) {
+      return;
+    }
+    const resetTime = Date.now();
+    await handleAdminModifyStudent(st, {
+      points: calibratedPoints,
+      pointsResetAt: resetTime
+    });
+    setProfiles(prev => {
+      if (!prev[st.profileId]) return prev;
+      const next = {
+        ...prev,
+        [st.profileId]: {
+          ...prev[st.profileId],
+          points: calibratedPoints,
+          pointsResetAt: resetTime,
+          updatedAt: resetTime
+        }
+      };
+      try {
+        localStorage.setItem('LT_PROFILES', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+    showNotice(`✅ تمت معايرة واعتماد رصيد الطالب «${st.name}» بنجاح ليصبح ${calibratedPoints}⭐ نقطة نظامية.`);
+  };
+
+  // معايرة جماعية لجميع الطلاب ذوي الأرصدة المتضخمة إلى النقاط النظامية الموثقة
+  const handleAdminCalibrateAllInflatedStudents = async () => {
+    if (auditedInflatedStudents.length === 0) {
+      showNotice('جميع أرصدة الطلاب نظامية ومتطابقة تمامًا!');
+      return;
+    }
+    if (
+      !window.confirm(
+        `⚠️ تأكيد المعايرة الشاملة للمعلم:\nسيتم فحص وتصحيح أرصدة ${auditedInflatedStudents.length} طلاب تظهر لديهم أرصدة متضخمة سابقة، واعتماد النقاط النظامية الفعلية لكل منهم (نقطة لكل إجابة صحيحة + 10 نقاط للتحديات اليومية).\n\nهل تريد المتابعة واعتماد النقاط النظامية؟`
+      )
+    ) {
+      return;
+    }
+    try {
+      const resetTime = Date.now();
+      const promises = auditedInflatedStudents.map(item =>
+        setDoc(
+          doc(db, 'students', item.student.docId),
+          {
+            ...item.student,
+            points: item.expectedMaxPoints,
+            pointsResetAt: resetTime,
+            updatedAt: resetTime
+          },
+          { merge: true }
+        )
+      );
+      await Promise.all(promises);
+
+      setProfiles(prev => {
+        const next = { ...prev };
+        auditedInflatedStudents.forEach(item => {
+          const pid = item.student.profileId;
+          if (next[pid]) {
+            next[pid] = {
+              ...next[pid],
+              points: item.expectedMaxPoints,
+              pointsResetAt: resetTime,
+              updatedAt: resetTime
+            };
+          }
+        });
+        try {
+          localStorage.setItem('LT_PROFILES', JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+
+      showNotice(`✅ تمت معايرة وتصحيح أرصدة جميع الطلاب المتأثرين بنجاح (${auditedInflatedStudents.length} طلاب)!`);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, 'students/calibrate_inflated');
     }
   };
 
@@ -3113,10 +3396,14 @@ export default function App() {
     }
   };
 
-  // Merge cloud students and local profiles for the Top 10 Horse Race Leaderboard
-  const leaderboardStudents: CloudStudentRow[] = (() => {
+  // توحيد نتائج المضمار مع الرصيد الحقيقي للطلاب في قاعدة البيانات السحابية (Firebase)
+  const leaderboardStudents: CloudStudentRow[] = useMemo(() => {
     const map = new Map<string, CloudStudentRow>();
-    cloudStudents.forEach(s => map.set(s.profileId, s));
+    // الاعتماد المباشر على رصيد الطلاب الحقيقي الموحد في السحابة
+    cloudStudents.forEach(s => {
+      map.set(s.profileId, s);
+    });
+    // إدراج أي ملف محلي على الجهاز إذا لم يكن محفوظاً بعد في السحابة مع تجنب أي تكرار
     Object.entries(profiles).forEach(([pid, p]) => {
       if (!map.has(pid)) {
         map.set(pid, {
@@ -3138,7 +3425,7 @@ export default function App() {
           lastQuizScore: p.lastQuizScore || 0,
           lastQuizTotal: p.lastQuizTotal || 0,
           isBlocked: Boolean(p.isBlocked),
-          updatedAt: Date.now(),
+          updatedAt: p.updatedAt || Date.now(),
           registeredAt: p.registeredAt,
           lastActiveAt: p.lastActiveAt || p.updatedAt,
           sessionCount: p.sessionCount,
@@ -3148,8 +3435,9 @@ export default function App() {
         });
       }
     });
+    // ترتيب فرسان المضمار وفق مجموع نقاطهم الحقيقي من الأعلى إلى الأقل
     return Array.from(map.values()).sort((a, b) => b.points - a.points || b.correct - a.correct);
-  })();
+  }, [cloudStudents, profiles, trackRefreshTick]);
 
   const top10Racers = leaderboardStudents.slice(0, 10);
   const maxRacePoints = Math.max(100, ...(top10Racers.map(r => r.points) || [100]));
@@ -4246,10 +4534,29 @@ export default function App() {
                     يتقدم جواد كل طالب من خط البداية (اليمين) تدريجيًا نحو الصدارة على المضمار العشبي الأخضر مع كل اختبار يجتازه وتحدٍّ يحلّه.
                   </p>
                 </div>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                   <span className="splashBadge" style={{ margin: 0 }}>
                     👥 إجمالي الفرسان المسجلين: {leaderboardStudents.length}
                   </span>
+                  <button
+                    className="btn light"
+                    style={{
+                      padding: '5px 12px',
+                      fontSize: 12,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      borderRadius: 8,
+                      border: '1px solid #cbd5e1'
+                    }}
+                    onClick={() => {
+                      setTrackRefreshTick(t => t + 1);
+                      showNotice('🔄 تم تحديث عرض نتائج المضمار وتأكيد تطابقها مع السحابة.');
+                    }}
+                    title="تحديث عرض المضمار دون التأثير على الأرصدة الأصلية"
+                  >
+                    🔄 تحديث عرض المضمار
+                  </button>
                 </div>
               </div>
 
@@ -4588,7 +4895,27 @@ export default function App() {
                 );
               })()}
 
-              {top10Racers.length > 0 ? (
+              {cloudStudentsLoading ? (
+                <div style={{ textAlign: 'center', padding: '36px 16px', background: '#f8fafc', borderRadius: 14, border: '1.5px dashed #cbd5e1', margin: '12px 0' }}>
+                  <div style={{ fontSize: 32, marginBottom: 8 }}>⏳</div>
+                  <strong style={{ color: '#334155', fontSize: 14.5, display: 'block' }}>
+                    جاري تحميل الرصيد الحقيقي لفرسان المضمار من قاعدة البيانات السحابية (Firebase)...
+                  </strong>
+                  <span style={{ fontSize: 12, color: '#64748b' }}>
+                    يتم الآن جلب أحدث نقاط وترتيب المتسابقين الحقيقي لضمان مطابقة النتائج مع لوحة المعلم وملف الطالب.
+                  </span>
+                </div>
+              ) : cloudStudentsError ? (
+                <div style={{ textAlign: 'center', padding: '24px 16px', background: '#fff1f2', borderRadius: 14, border: '1.5px solid #fecdd3', margin: '12px 0' }}>
+                  <div style={{ fontSize: 28, marginBottom: 6 }}>⚠️</div>
+                  <strong style={{ color: '#9f1239', fontSize: 14, display: 'block' }}>
+                    تعذر الاتصال بقاعدة البيانات لتحميل رصيد فرسان المضمار الحقيقي.
+                  </strong>
+                  <span style={{ fontSize: 12, color: '#be123c' }}>
+                    تطبيقاً لسياسة الشفافية، لا يعرض المضمار أرصدة قديمة أو تقديرية. يرجى التحقق من اتصال الإنترنت.
+                  </span>
+                </div>
+              ) : top10Racers.length > 0 ? (
                 <div className="raceTrack">
                   {/* تم إلغاء رمز وحاجز خط النهاية من المضمار حالياً استجابة لطلب المعلم */}
                   <div className="raceStartLine" title="خط البداية والانطلاق (اليمين)" />
@@ -6022,6 +6349,123 @@ export default function App() {
                       </button>
                     </div>
 
+                    {/* تقرير تدقيق ومعايرة الأرصدة المتضخمة السابقة بناءً على سياسة النقاط الجديدة */}
+                    {auditedInflatedStudents.length > 0 && (
+                      <div
+                        style={{
+                          background: '#fffbeb',
+                          border: '1.5px solid #fde68a',
+                          borderRadius: 12,
+                          padding: '14px 16px',
+                          marginBottom: 16,
+                          boxShadow: '0 2px 8px rgba(245, 158, 11, 0.1)'
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            flexWrap: 'wrap',
+                            gap: 10,
+                            marginBottom: 12
+                          }}
+                        >
+                          <div>
+                            <strong
+                              style={{
+                                fontSize: 13.5,
+                                color: '#92400e',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 6
+                              }}
+                            >
+                              <span>🛡️</span> تقرير تدقيق ومراجعة الأرصدة السابقة (تم رصد {auditedInflatedStudents.length} طلاب بأرصدة متضخمة بحاجة لمعايرة):
+                            </strong>
+                            <p style={{ margin: '4px 0 0', fontSize: 12, color: '#b45309' }}>
+                              وفق سياسة النقاط الجديدة (نقطة واحدة لكل إجابة صحيحة + 10 نقاط لتحدي اليوم فقط وبدون تكرار)، يمكنك مراجعة ومعايرة أرصدة الطلاب إلى نقاطهم النظامية الموثقة أو تصفيرها بموافقتك:
+                            </p>
+                          </div>
+                          <button
+                            className="btn gold"
+                            style={{ fontSize: 12, padding: '7px 14px', fontWeight: 800 }}
+                            onClick={handleAdminCalibrateAllInflatedStudents}
+                            title="معايرة جميع الأرصدة المتضخمة إلى النقاط النظامية الفعلية دفعة واحدة"
+                          >
+                            ⚡ معايرة جماعية للأرصدة النظامية
+                          </button>
+                        </div>
+
+                        <div style={{ overflowX: 'auto' }}>
+                          <table
+                            style={{
+                              width: '100%',
+                              borderCollapse: 'collapse',
+                              fontSize: 12,
+                              background: '#fff',
+                              borderRadius: 8,
+                              overflow: 'hidden'
+                            }}
+                          >
+                            <thead>
+                              <tr style={{ background: '#fef3c7', textAlign: 'right' }}>
+                                <th style={{ padding: '6px 10px' }}>الطالب</th>
+                                <th style={{ padding: '6px 10px' }}>الفصل</th>
+                                <th style={{ padding: '6px 10px' }}>الرصيد المتضخم الحالي</th>
+                                <th style={{ padding: '6px 10px' }}>الإجابات الصحيحة الموثقة</th>
+                                <th style={{ padding: '6px 10px' }}>الرصيد النظامي الفعلي</th>
+                                <th style={{ padding: '6px 10px', textAlign: 'center' }}>إجراء المعلم المعتمد</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {auditedInflatedStudents.map(({ student: st, verifiedCorrect, expectedMaxPoints, discrepancy }) => (
+                                <tr key={st.docId} style={{ borderBottom: '1px solid #fef3c7' }}>
+                                  <td style={{ padding: '6px 10px', fontWeight: 700 }}>{st.name}</td>
+                                  <td style={{ padding: '6px 10px' }}>فصل {st.cls}</td>
+                                  <td style={{ padding: '6px 10px', color: '#dc2626', fontWeight: 800 }}>
+                                    {st.points}⭐ <span style={{ fontSize: 10, color: '#ef4444' }}>(فائض: +{discrepancy})</span>
+                                  </td>
+                                  <td style={{ padding: '6px 10px', color: '#16a34a', fontWeight: 700 }}>
+                                    {verifiedCorrect} إجابة صحيحة
+                                  </td>
+                                  <td style={{ padding: '6px 10px', color: '#0284c7', fontWeight: 800 }}>
+                                    {expectedMaxPoints}⭐
+                                  </td>
+                                  <td style={{ padding: '6px 10px', textAlign: 'center' }}>
+                                    <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
+                                      <button
+                                        className="btn green"
+                                        style={{ padding: '3px 8px', fontSize: 11 }}
+                                        onClick={() => handleAdminCalibrateStudentPoints(st, expectedMaxPoints)}
+                                        title={`معايرة رصيد ${st.name} إلى النقاط النظامية الموثقة (${expectedMaxPoints}⭐)`}
+                                      >
+                                        ⚡ اعتماد ({expectedMaxPoints}⭐)
+                                      </button>
+                                      <button
+                                        className="btn"
+                                        style={{
+                                          padding: '3px 8px',
+                                          fontSize: 11,
+                                          background: '#fee2e2',
+                                          color: '#991b1b',
+                                          border: '1px solid #fca5a5'
+                                        }}
+                                        onClick={() => handleAdminResetStudentPoints(st)}
+                                        title={`تصفير رصيد ${st.name} بالكامل إلى 0⭐`}
+                                      >
+                                        🔄 تصفير (0⭐)
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
                     <div style={{ overflowX: 'auto' }}>
                       <table
                         style={{
@@ -6127,7 +6571,80 @@ export default function App() {
                                 </span>
                               </td>
                               <td style={{ padding: 8, fontWeight: 800, color: '#197a56' }}>
-                                {st.points}
+                                {inlineEditPointsId === st.profileId ? (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      max="10000"
+                                      value={inlineEditPointsInput}
+                                      onChange={e => setInlineEditPointsInput(e.target.value)}
+                                      style={{
+                                        width: 60,
+                                        padding: '3px 6px',
+                                        borderRadius: 6,
+                                        border: '1.5px solid #11666c',
+                                        fontSize: 12,
+                                        fontWeight: 700,
+                                        background: '#fff'
+                                      }}
+                                      autoFocus
+                                      onKeyDown={e => {
+                                        if (e.key === 'Enter') {
+                                          const val = parseInt(inlineEditPointsInput, 10);
+                                          if (!isNaN(val) && val >= 0) {
+                                            handleAdminSetStudentPoints(st, val);
+                                            setInlineEditPointsId(null);
+                                          }
+                                        }
+                                        if (e.key === 'Escape') setInlineEditPointsId(null);
+                                      }}
+                                    />
+                                    <button
+                                      className="btn green"
+                                      style={{ padding: '2px 6px', fontSize: 11 }}
+                                      onClick={() => {
+                                        const val = parseInt(inlineEditPointsInput, 10);
+                                        if (!isNaN(val) && val >= 0) {
+                                          handleAdminSetStudentPoints(st, val);
+                                          setInlineEditPointsId(null);
+                                        }
+                                      }}
+                                      title="حفظ الرصيد الجديد"
+                                    >
+                                      ✓
+                                    </button>
+                                    <button
+                                      className="btn light"
+                                      style={{ padding: '2px 6px', fontSize: 11 }}
+                                      onClick={() => setInlineEditPointsId(null)}
+                                      title="إلغاء"
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                                    <span>{st.points}⭐</span>
+                                    <button
+                                      style={{
+                                        background: 'none',
+                                        border: 'none',
+                                        cursor: 'pointer',
+                                        padding: 2,
+                                        fontSize: 12,
+                                        color: '#0284c7'
+                                      }}
+                                      onClick={() => {
+                                        setInlineEditPointsId(st.profileId);
+                                        setInlineEditPointsInput(String(st.points));
+                                      }}
+                                      title={`تعديل وضبط رصيد الطالب ${st.name} مباشرة`}
+                                    >
+                                      ✏️
+                                    </button>
+                                  </div>
+                                )}
                               </td>
                               <td style={{ padding: 8 }}>المرحلة {st.nafesStageIndex + 1}</td>
                               <td style={{ padding: 8 }}>اليوم {st.dailyCurrentIndex + 1}</td>
@@ -6139,6 +6656,24 @@ export default function App() {
                                 )}
                               </td>
                               <td style={{ padding: 8, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                                <button
+                                  className="btn"
+                                  style={{
+                                    padding: '4px 8px',
+                                    fontSize: 11,
+                                    background: '#eff6ff',
+                                    color: '#1d4ed8',
+                                    border: '1px solid #bfdbfe',
+                                    fontWeight: 700
+                                  }}
+                                  onClick={() => {
+                                    setInlineEditPointsId(st.profileId);
+                                    setInlineEditPointsInput(String(st.points));
+                                  }}
+                                  title={`تعديل وضبط رصيد الطالب ${st.name} لأي رقم`}
+                                >
+                                  ✏️ ضبط الرصيد
+                                </button>
                                 <button
                                   className="btn"
                                   style={{
@@ -6165,10 +6700,11 @@ export default function App() {
                                   className="btn green"
                                   style={{ padding: '4px 8px', fontSize: 11 }}
                                   onClick={() =>
-                                    handleAdminModifyStudent(st, { points: st.points + 20 })
+                                    handleAdminModifyStudent(st, { points: st.points + 1 })
                                   }
+                                  title="منح الطالب +1 نقطة تشجيعية نظامية"
                                 >
-                                  +20 نقطة
+                                  +1 نقطة (تشجيع)
                                 </button>
                                 <button
                                   className="btn"
@@ -9518,7 +10054,7 @@ export default function App() {
 
                   <div className="actions" style={{ marginTop: 18, justifyContent: 'center', flexWrap: 'wrap', gap: 8 }}>
                     <button className="btn green" onClick={checkOrderGame}>
-                      ✅ تحقق من الترتيب (+20 نقطة)
+                      ✅ تحقق من الترتيب (+1 نقطة)
                     </button>
                     <button
                       className="btn light"

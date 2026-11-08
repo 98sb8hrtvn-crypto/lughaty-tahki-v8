@@ -40,7 +40,8 @@ service cloud.firestore {
           'dailyCurrentIndex', 'dailyNextUnlockMs', 'lastQuizTitle',
           'lastQuizScore', 'lastQuizTotal', 'isBlocked', 'raceCompletedAt',
           'finishLineReached', 'scoredQuestions', 'updatedAt',
-          'completedNafesStages', 'registeredAt', 'lastActiveAt', 'sessionCount', 'gradeLevel', 'lastActivityType'
+          'completedNafesStages', 'registeredAt', 'lastActiveAt', 'sessionCount', 'gradeLevel', 'lastActivityType',
+          'pointsResetAt'
         ]) &&
         data.profileId is string && data.profileId.size() >= 2 && data.profileId.size() <= 100 &&
         data.name is string && data.name.size() >= 1 && data.name.size() <= 80 &&
@@ -69,7 +70,8 @@ service cloud.firestore {
         (!('lastActiveAt' in data) || (data.lastActiveAt is number && data.lastActiveAt >= 0)) &&
         (!('sessionCount' in data) || (data.sessionCount is number && data.sessionCount >= 0)) &&
         (!('gradeLevel' in data) || (data.gradeLevel is string && data.gradeLevel.size() <= 50)) &&
-        (!('lastActivityType' in data) || (data.lastActivityType is string && data.lastActivityType.size() <= 60));
+        (!('lastActivityType' in data) || (data.lastActivityType is string && data.lastActivityType.size() <= 60)) &&
+        (!('pointsResetAt' in data) || (data.pointsResetAt is number && data.pointsResetAt >= 0));
     }
 
     function isValidChallenge(data) {

@@ -328,11 +328,11 @@ export const hasEarnedTitle = (
   }
   if (title.category === 'رتب النقاط') {
     if (title.id === 'rank_trainee') return true;
-    if (title.id === 'rank_starter') return points >= 100;
-    if (title.id === 'rank_intrepid') return points >= 300;
-    if (title.id === 'rank_brilliant') return points >= 600;
-    if (title.id === 'rank_golden') return points >= 1000;
-    if (title.id === 'rank_legend') return points >= 2000;
+    if (title.id === 'rank_starter') return points >= 10;
+    if (title.id === 'rank_intrepid') return points >= 25;
+    if (title.id === 'rank_brilliant') return points >= 50;
+    if (title.id === 'rank_golden') return points >= 80;
+    if (title.id === 'rank_legend') return points >= 120;
   }
   return badges.some(
     b => b.includes(title.badgeKey) || b.includes(title.name) || title.badgeKey.includes(b)

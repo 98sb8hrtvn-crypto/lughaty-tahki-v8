@@ -122,6 +122,10 @@
           "description": "Category of student's latest activity",
           "maxLength": 60
         },
+        "pointsResetAt": {
+          "type": "number",
+          "description": "Timestamp ms when points were officially reset or calibrated by teacher"
+        },
         "updatedAt": {
           "type": "number",
           "description": "Client/server epoch ms of last update"

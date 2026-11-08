@@ -498,7 +498,7 @@ export const DAILY_CHALLENGE_PROGRESSION: DailyChallengeItem[] = [
   {
     day: 1,
     level: 'سهل',
-    points: 1,
+    points: 10,
     unitTopic: 'الوحدة الأولى — أسلوب الأمر والمذكر والمؤنث',
     question: 'أي الجمل الآتية تمثل أسلوب أمر موجّهًا للمفرد المذكر؟',
     options: [
@@ -513,7 +513,7 @@ export const DAILY_CHALLENGE_PROGRESSION: DailyChallengeItem[] = [
   {
     day: 2,
     level: 'سهل',
-    points: 1,
+    points: 10,
     unitTopic: 'الوحدة الأولى — النكرة والمعرفة',
     question: 'أي الكلمات الآتية تُعدّ (اسمًا نكرة)؟',
     options: [
@@ -528,7 +528,7 @@ export const DAILY_CHALLENGE_PROGRESSION: DailyChallengeItem[] = [
   {
     day: 3,
     level: 'متوسط',
-    points: 1,
+    points: 10,
     unitTopic: 'الوحدة الأولى — المبتدأ والخبر',
     question: 'في جملة «الطالبانِ المجتهدانِ متفوقانِ»، ما الكلمة التي تعرب (خبرًا) وما علامة رفعها؟',
     options: [
@@ -543,7 +543,7 @@ export const DAILY_CHALLENGE_PROGRESSION: DailyChallengeItem[] = [
   {
     day: 4,
     level: 'متوسط',
-    points: 1,
+    points: 10,
     unitTopic: 'الوحدة الثانية — همزة الوصل وهمزة القطع',
     question: 'لماذا كُتبت كلمة «استغفار» بهمزة وصل بينما كُتبت «إكرام» بهمزة قطع؟',
     options: [
@@ -558,7 +558,7 @@ export const DAILY_CHALLENGE_PROGRESSION: DailyChallengeItem[] = [
   {
     day: 5,
     level: 'صعب',
-    points: 1,
+    points: 10,
     unitTopic: 'الوحدة الأولى — المعرّف بالإضافة',
     question: 'في أي جملة مما يأتي وردت كلمة «نور» (معرفةً بالإضافة)؟',
     options: [
@@ -573,7 +573,7 @@ export const DAILY_CHALLENGE_PROGRESSION: DailyChallengeItem[] = [
   {
     day: 6,
     level: 'صعب',
-    points: 1,
+    points: 10,
     unitTopic: 'الوحدة الثانية — الأفعال الناسخة (كان وأخواتها)',
     question: 'عند إدخال الفعل الناسخ «أصبحَ» على جملة «المهندسونَ ماهرونَ»، تصبح الجملة الصحيحة:',
     options: [
@@ -588,7 +588,7 @@ export const DAILY_CHALLENGE_PROGRESSION: DailyChallengeItem[] = [
   {
     day: 7,
     level: 'صعب جدًا',
-    points: 1,
+    points: 10,
     unitTopic: 'الوحدة الأولى — المبتدأ والخبر (الأسماء الخمسة)',
     question: 'ما الإعراب الدقيق لكلمتَي (أخوكَ) و(ذو) في جملة: «أخوكَ الصادقُ ذو خلقٍ رفيعٍ»؟',
     options: [
@@ -603,7 +603,7 @@ export const DAILY_CHALLENGE_PROGRESSION: DailyChallengeItem[] = [
   {
     day: 8,
     level: 'صعب جدًا',
-    points: 1,
+    points: 10,
     unitTopic: 'الوحدة الأولى — أسلوب الأمر وجزم المضارع',
     question: 'أي الجمل الآتية حوت أسلوب أمر بصيغة المضارع المقترن بلام الأمر وكان الفعل فيها مجزومًا بحذف حرف العلة؟',
     options: [
@@ -618,7 +618,7 @@ export const DAILY_CHALLENGE_PROGRESSION: DailyChallengeItem[] = [
   {
     day: 9,
     level: 'تحدي العباقرة (صعب جدًا+)',
-    points: 1,
+    points: 10,
     unitTopic: 'الوحدة الثالثة — التذكير والتأنيث والمطابقة الدقيقة',
     question: 'اقرأ الجملة: «الشمسُ المشرقةُ ضياؤُها ساطعٌ في سماءِ الوطنِ». كم اسمًا مؤنثًا (حقيقيًّا أو مجازيًّا) ورد في هذه الجملة؟',
     options: [
@@ -633,7 +633,7 @@ export const DAILY_CHALLENGE_PROGRESSION: DailyChallengeItem[] = [
   {
     day: 10,
     level: 'تحدي العباقرة (صعب جدًا+)',
-    points: 1,
+    points: 10,
     unitTopic: 'شامل الوحدات — تمييز المعارف والأخطاء التركيبية',
     question: 'أي جملة من الجمل الأربع الآتية خَلَتْ تمامًا من أي خطأ إملائي أو نحوي؟',
     options: [
