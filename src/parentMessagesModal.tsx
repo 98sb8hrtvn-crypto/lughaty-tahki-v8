@@ -126,7 +126,7 @@ export const ParentMessagesModal: React.FC<ParentMessagesModalProps> = ({
       onClick={e => {
         if (e.target === e.currentTarget) onClose();
       }}
-      aria-label="نافذة تواصل ولي الأمر مع المعلم"
+      aria-label="نافذة التواصل مع المعلم"
     >
       <div className="dialog" style={{ width: 'min(780px, 96%)', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
         <div
@@ -141,7 +141,7 @@ export const ParentMessagesModal: React.FC<ParentMessagesModalProps> = ({
             <span style={{ fontSize: 28 }}>📩</span>
             <div>
               <h2 style={{ margin: 0, fontSize: 18, color: '#fff' }}>
-                تواصل ولي أمر الطالب: {studentName} ({studentCls})
+                التواصل مع المعلم · {studentName} ({studentCls})
               </h2>
               <p style={{ margin: '2px 0 0', fontSize: 12, color: '#d1fae5' }}>
                 قناة تواصل نصية خاصة وسرية ومباشرة مع معلم المادة (أ. مساعد سليمان الصخري)

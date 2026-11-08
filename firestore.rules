@@ -143,11 +143,34 @@ service cloud.firestore {
 
     function isValidFeedback(data) {
       return data.keys().hasAll(['role', 'cls', 'text', 'status', 'createdAt']) &&
-        data.keys().hasOnly(['role', 'cls', 'text', 'status', 'createdAt']) &&
+        data.keys().hasOnly(['role', 'cls', 'text', 'status', 'createdAt', 'studentId', 'replyText', 'replyAt', 'teacherName']) &&
         data.role is string && data.role.size() >= 2 && data.role.size() <= 50 &&
         data.cls is string && data.cls.size() >= 1 && data.cls.size() <= 30 &&
         data.text is string && data.text.size() >= 2 && data.text.size() <= 500 &&
         data.status is string && data.status.size() >= 2 && data.status.size() <= 40 &&
+        data.createdAt is number && data.createdAt >= 0 &&
+        (!('studentId' in data) || (data.studentId is string && data.studentId.size() <= 128)) &&
+        (!('replyText' in data) || (data.replyText is string && data.replyText.size() <= 1000)) &&
+        (!('replyAt' in data) || data.replyAt is number) &&
+        (!('teacherName' in data) || (data.teacherName is string && data.teacherName.size() <= 100));
+    }
+
+    function isValidPenaltyResult(data) {
+      return data.keys().hasAll([
+          'studentId', 'studentName', 'cls', 'stageName',
+          'studentGoals', 'opponentGoals', 'outcome', 'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'studentId', 'studentName', 'cls', 'stageName',
+          'studentGoals', 'opponentGoals', 'outcome', 'createdAt'
+        ]) &&
+        data.studentId is string && data.studentId.size() >= 1 && data.studentId.size() <= 128 &&
+        data.studentName is string && data.studentName.size() >= 1 && data.studentName.size() <= 100 &&
+        data.cls is string && data.cls.size() >= 1 && data.cls.size() <= 40 &&
+        data.stageName is string && data.stageName.size() >= 1 && data.stageName.size() <= 80 &&
+        data.studentGoals is int && data.studentGoals >= 0 && data.studentGoals <= 10 &&
+        data.opponentGoals is int && data.opponentGoals >= 0 && data.opponentGoals <= 10 &&
+        data.outcome in ['فوز', 'تعادل', 'خسارة'] &&
         data.createdAt is number && data.createdAt >= 0;
     }
 
@@ -207,6 +230,13 @@ service cloud.firestore {
       allow create: if isValidId(messageId) && isValidParentMessage(incoming());
       allow update: if isValidId(messageId) && isValidParentMessage(incoming());
       allow delete: if isValidId(messageId);
+    }
+
+    match /penalty_results/{resultId} {
+      allow read: if true;
+      allow create: if isValidId(resultId) && isValidPenaltyResult(incoming());
+      allow update: if isValidId(resultId) && isValidPenaltyResult(incoming());
+      allow delete: if isValidId(resultId);
     }
   }
 }

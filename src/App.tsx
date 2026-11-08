@@ -79,11 +79,15 @@ interface LastActivity {
 
 interface FeedbackItem {
   id?: string;
+  studentId?: string;
   role: string;
   cls?: string;
   text: string;
   status: string;
   createdAt?: number;
+  replyText?: string;
+  replyAt?: number;
+  teacherName?: string;
 }
 
 interface MistakeRecord {
@@ -210,6 +214,18 @@ interface LiveTickerEvent {
   text: string;
   highlight: string;
   timestamp: number;
+}
+
+interface PenaltyResultEvent {
+  id: string;
+  studentId: string;
+  studentName: string;
+  cls: string;
+  stageName: string;
+  studentGoals: number;
+  opponentGoals: number;
+  outcome: 'فوز' | 'تعادل' | 'خسارة';
+  createdAt: number;
 }
 
 
@@ -476,7 +492,10 @@ export default function App() {
   const [inlineEditPointsInput, setInlineEditPointsInput] = useState<string>('');
   const [customChallenges, setCustomChallenges] = useState<(DailyChallengeItem & { docId: string })[]>([]);
   const [cloudFeedback, setCloudFeedback] = useState<FeedbackItem[]>([]);
-  const [appSettings, setAppSettings] = useState<AppSettings>(() => {
+  const [feedbackReplyDrafts, setFeedbackReplyDrafts] = useState<Record<string, string>>({});
+  const [feedbackReplyingId, setFeedbackReplyingId] = useState<string | null>(null);
+  const [penaltyResults, setPenaltyResults] = useState<PenaltyResultEvent[]>([]);
+  const [appSettings, setAppSettings] = useState<AppSettings>(() => {}
     try {
       const saved = localStorage.getItem('LT_GLOBAL_SETTINGS');
       if (saved) {
@@ -1107,7 +1126,11 @@ export default function App() {
             cls: data.cls || 'بدون تحديد',
             text: data.text || '',
             status: data.status || 'وارد جديد',
-            createdAt: data.createdAt || 0
+            createdAt: data.createdAt || 0,
+            studentId: data.studentId || '',
+            replyText: data.replyText || '',
+            replyAt: data.replyAt || undefined,
+            teacherName: data.teacherName || ''
           });
         });
         items.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
@@ -1151,6 +1174,38 @@ export default function App() {
       }
     );
 
+    // نتائج المباريات محفوظة في Firebase وتصل مباشرة إلى واجهات الطلاب والمعلم.
+    const qPenaltyResults = query(collection(db, 'penalty_results'), orderBy('createdAt', 'desc'), limit(12));
+    const unsubPenaltyResults = onSnapshot(
+      qPenaltyResults,
+      snap => {
+        const rows: PenaltyResultEvent[] = [];
+        snap.forEach(d => {
+          const data = d.data();
+          if (
+            typeof data.studentName === 'string' &&
+            typeof data.studentId === 'string' &&
+            Number.isInteger(data.studentGoals) &&
+            Number.isInteger(data.opponentGoals)
+          ) {
+            rows.push({
+              id: d.id,
+              studentId: data.studentId,
+              studentName: data.studentName,
+              cls: data.cls || 'بدون تحديد',
+              stageName: data.stageName || 'مرحلة ركلات الترجيح',
+              studentGoals: data.studentGoals,
+              opponentGoals: data.opponentGoals,
+              outcome: data.outcome || 'تعادل',
+              createdAt: data.createdAt || 0
+            });
+          }
+        });
+        setPenaltyResults(rows);
+      },
+      err => handleFirestoreError(err, OperationType.LIST, 'penalty_results')
+    );
+
     return () => {
       unsubAuth();
       unsubStudents();
@@ -1158,6 +1213,7 @@ export default function App() {
       unsubSettings();
       unsubFeedback();
       unsubMessages();
+      unsubPenaltyResults();
     };
   }, []);
 
@@ -1461,7 +1517,7 @@ export default function App() {
   };
 
   useEffect(() => {
-    const handlePenaltyMessage = (event: MessageEvent) => {
+    const handlePenaltyMessage = async (event: MessageEvent) => {
       if (event.origin !== window.location.origin) return;
       const data = event.data;
       if (!data || typeof data !== 'object') return;
@@ -1471,6 +1527,40 @@ export default function App() {
       }
       if (data.type === 'LT_PENALTY_AWARD' && typeof data.questionId === 'string' && data.studentId === activeId && activeId) {
         addPoints(1, `penalty:${data.questionId}`);
+        return;
+      }
+      if (
+        data.type === 'LT_PENALTY_RESULT' &&
+        data.studentId === activeId &&
+        activeId &&
+        currentProfile &&
+        Number.isInteger(data.stageIndex) && data.stageIndex >= 0 && data.stageIndex <= 4 &&
+        Number.isInteger(data.studentGoals) && data.studentGoals >= 0 && data.studentGoals <= 10 &&
+        Number.isInteger(data.opponentGoals) && data.opponentGoals >= 0 && data.opponentGoals <= 10
+      ) {
+        const studentGoals = data.studentGoals as number;
+        const opponentGoals = data.opponentGoals as number;
+        const stageIndex = data.stageIndex as number;
+        const outcome: PenaltyResultEvent['outcome'] =
+          studentGoals > opponentGoals ? 'فوز' : studentGoals === opponentGoals ? 'تعادل' : 'خسارة';
+        const createdAt = Date.now();
+        const resultId = toSafeDocId(`penalty_${activeId}_stage_${stageIndex}_${createdAt}`);
+        const result: PenaltyResultEvent = {
+          id: resultId,
+          studentId: activeId,
+          studentName: currentProfile.name,
+          cls: currentProfile.cls,
+          stageName: ['القيم الإسلامية', 'الأعلام', 'الوطن', 'التحدي النحوي', 'النهائي الكبير'][stageIndex],
+          studentGoals,
+          opponentGoals,
+          outcome,
+          createdAt
+        };
+        try {
+          await setDoc(doc(db, 'penalty_results', resultId), result);
+        } catch (err) {
+          handleFirestoreError(err, OperationType.WRITE, `penalty_results/${resultId}`);
+        }
       }
     };
     window.addEventListener('message', handlePenaltyMessage);
@@ -2598,7 +2688,8 @@ export default function App() {
       cls: studentCls,
       text: t.slice(0, 500),
       status: 'وارد للمعلم',
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      studentId: activeId || ''
     };
     try {
       await setDoc(doc(db, 'feedback', feedId), newItem);
@@ -2725,7 +2816,7 @@ export default function App() {
         teacherName: 'أ. مساعد سليمان الصخري'
       };
       await setDoc(doc(db, 'parent_messages', messageId), updated);
-      showNotice(`✅ تم إرسال الرد لولي أمر الطالب «${target.studentName}» بنجاح!`);
+      showNotice(`✅ تم إرسال الرد إلى ${target.studentName} بنجاح!`);
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `parent_messages/${messageId}`);
     }
@@ -3376,6 +3467,34 @@ export default function App() {
     }
   };
 
+  const handleReplyStudentFeedback = async (fb: FeedbackItem) => {
+    if (!fb.id) return;
+    const replyText = (feedbackReplyDrafts[fb.id] || '').trim();
+    if (!replyText) return showNotice('اكتب الرد أولاً.');
+    try {
+      await setDoc(doc(db, 'feedback', fb.id), {
+        role: fb.role,
+        cls: fb.cls || 'بدون تحديد',
+        text: fb.text,
+        status: 'تم الرد',
+        createdAt: fb.createdAt || Date.now(),
+        studentId: fb.studentId || '',
+        replyText: replyText.slice(0, 1000),
+        replyAt: Date.now(),
+        teacherName: 'أ. مساعد سليمان الصخري'
+      });
+      setFeedbackReplyDrafts(prev => {
+        const next = { ...prev };
+        delete next[fb.id!];
+        return next;
+      });
+      setFeedbackReplyingId(null);
+      showNotice(`تم إرسال الرد إلى الطالب ${fb.role}.`);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `feedback/${fb.id}`);
+    }
+  };
+
   const handleToggleFeedbackApproval = async (fb: FeedbackItem) => {
     if (!fb.id) return;
     const nextStatus = fb.status === 'تمت القراءة' ? 'قيد المراجعة' : 'تمت القراءة';
@@ -3385,7 +3504,9 @@ export default function App() {
         cls: fb.cls || 'بدون تحديد',
         text: fb.text,
         status: nextStatus,
-        createdAt: fb.createdAt || Date.now()
+        createdAt: fb.createdAt || Date.now(),
+        studentId: fb.studentId || '',
+        ...(fb.replyText ? { replyText: fb.replyText, replyAt: fb.replyAt || 0, teacherName: fb.teacherName || 'أ. مساعد سليمان الصخري' } : {})
       });
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, `feedback/${fb.id}`);
@@ -3570,6 +3691,17 @@ export default function App() {
         type: ev.type === 'lead' ? 'lead' : 'score',
         text: ev.text,
         highlight: ev.highlight
+      });
+    });
+
+    // نتائج ركلات الترجيح المحفوظة سحابياً.
+    penaltyResults.slice(0, 3).forEach(result => {
+      items.push({
+        id: result.id,
+        icon: result.outcome === 'فوز' ? '🏆' : result.outcome === 'تعادل' ? '🤝' : '⚽',
+        type: 'score',
+        text: `نتيجة ركلات الترجيح: ${result.studentName} — ${result.stageName}`,
+        highlight: `${result.studentGoals} - ${result.opponentGoals} · ${result.outcome} · فصل ${result.cls}`
       });
     });
 
@@ -4642,9 +4774,9 @@ export default function App() {
 
               {/* شريط البث المباشر لنتائج السباق وتوجيهات المعلم المتحرك والمستمر فوق مضمار السباق */}
               <div className="raceTickerContainer" aria-label="شريط البث المباشر لنتائج سباق المضمار وتوجيهات المعلم">
-                <div className="raceTickerHeaderBadge" title="البث المباشر لنتائج سباق المضمار وتوجيهات المعلم">
+                <div className="raceTickerHeaderBadge" title="البث المباشر المستمر">
                   <span className="raceTickerPulseDot" />
-                  <span style={{ fontWeight: 900, fontSize: 13, letterSpacing: 0.5 }}>🏆 نتائج السباق وتوجيهات المعلم</span>
+                  <span style={{ fontWeight: 900, fontSize: 13, letterSpacing: 0.5 }}>🏆 البث المباشر</span>
                 </div>
                 <div className="raceTickerViewport">
                   <div className="raceTickerTrack">
@@ -5797,7 +5929,7 @@ export default function App() {
                       className={`btn ${adminTab === 'parentMessages' ? 'primary' : 'light'}`}
                       onClick={() => setAdminTab('parentMessages')}
                     >
-                      📩 رسائل أولياء الأمور ({parentMessages.length})
+                      📩 رسائل الطلاب وأولياء الأمور ({parentMessages.length})
                       {parentMessages.filter(m => m.status === 'جديد').length > 0 && (
                         <span
                           style={{
@@ -7766,7 +7898,7 @@ export default function App() {
                   <div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                       <p className="sub" style={{ margin: 0 }}>
-                        📥 صندوق رسائل الطلاب الخاص بالمعلم (خاص وسري - لا يظهر للطلاب):
+                        📥 رسائل الطلاب وملاحظاتهم الخاصة بالمعلم:
                       </p>
                       <span className="pill" style={{ background: '#ecfdf5', color: '#065f46', fontSize: 12, padding: '4px 10px', borderRadius: 8 }}>
                         🔒 خاص بالمعلم فقط
@@ -7808,11 +7940,37 @@ export default function App() {
                             <div style={{ fontSize: 14, color: '#334155', lineHeight: 1.6, background: '#fff', padding: '8px 12px', borderRadius: 6, border: '1px solid #f1f5f9' }}>
                               {fb.text}
                             </div>
-                            <div style={{ marginTop: 6, fontSize: 12, color: fb.status === 'تمت القراءة' ? '#059669' : '#d97706' }}>
+                            <div style={{ marginTop: 6, fontSize: 12, color: fb.status === 'تم الرد' ? '#15803d' : fb.status === 'تمت القراءة' ? '#059669' : '#d97706' }}>
                               الحالة: {fb.status || 'وارد جديد'}
                             </div>
+                            {fb.replyText && (
+                              <div style={{ marginTop: 10, padding: 10, borderRadius: 8, background: '#f0fdf4', borderRight: '3px solid #16a34a' }}>
+                                <b style={{ color: '#166534', fontSize: 12 }}>رد المعلم:</b>
+                                <p style={{ margin: '4px 0 0', whiteSpace: 'pre-wrap', fontSize: 13 }}>{fb.replyText}</p>
+                              </div>
+                            )}
+                            {feedbackReplyingId === fb.id && (
+                              <div style={{ marginTop: 10 }}>
+                                <textarea
+                                  rows={3}
+                                  value={feedbackReplyDrafts[fb.id || ''] || ''}
+                                  onChange={e => setFeedbackReplyDrafts(prev => ({ ...prev, [fb.id || '']: e.target.value }))}
+                                  placeholder="اكتب ردك للطالب..."
+                                  style={{ width: '100%', padding: 9, borderRadius: 8, border: '1px solid #cbd5e1', fontFamily: 'inherit' }}
+                                />
+                                <button className="btn green" style={{ marginTop: 6 }} onClick={() => handleReplyStudentFeedback(fb)}>إرسال الرد للطالب</button>
+                                <button className="btn light" style={{ marginTop: 6, marginRight: 6 }} onClick={() => setFeedbackReplyingId(null)}>إلغاء</button>
+                              </div>
+                            )}
                           </div>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            <button
+                              className="btn primary"
+                              style={{ padding: '6px 12px', fontSize: 12, whiteSpace: 'nowrap' }}
+                              onClick={() => setFeedbackReplyingId(feedbackReplyingId === fb.id ? null : (fb.id || null))}
+                            >
+                              {fb.replyText ? '✏️ تعديل الرد' : '✍️ الرد على الطالب'}
+                            </button>
                             <button
                               className={`btn ${
                                 fb.status === 'تمت القراءة' ? 'light' : 'green'
@@ -10307,6 +10465,26 @@ export default function App() {
                 ✉️ إرسال مباشرة للمعلم
               </button>
             </div>
+            {currentProfile && cloudFeedback.filter(fb => fb.studentId === activeId || (!fb.studentId && fb.role === currentProfile.name)).length > 0 && (
+              <div style={{ marginTop: 18 }}>
+                <h3 style={{ fontSize: 15, marginBottom: 10 }}>رسائلك وردود المعلم</h3>
+                {cloudFeedback
+                  .filter(fb => fb.studentId === activeId || (!fb.studentId && fb.role === currentProfile.name))
+                  .map(fb => (
+                    <div key={fb.id} style={{ padding: 12, marginBottom: 10, border: '1px solid #ddd6fe', borderRadius: 10, background: '#faf5ff' }}>
+                      <p style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: 13 }}>{fb.text}</p>
+                      {fb.replyText ? (
+                        <div style={{ marginTop: 10, padding: 10, background: '#f0fdf4', borderRadius: 8 }}>
+                          <b style={{ fontSize: 12, color: '#166534' }}>رد المعلم:</b>
+                          <p style={{ margin: '4px 0 0', whiteSpace: 'pre-wrap', fontSize: 13 }}>{fb.replyText}</p>
+                        </div>
+                      ) : (
+                        <small style={{ display: 'block', marginTop: 8, color: '#64748b' }}>بانتظار رد المعلم</small>
+                      )}
+                    </div>
+                  ))}
+              </div>
+            )}
           </div>
         </div>
       </div>

@@ -3388,6 +3388,7 @@ export default function App() {
 
   const finishStage = () => {
     const s = gameStateRef.current;
+    if (s.ended) return;
     s.ended = true;
     s.stageDone = true;
     s.totEduScore += s.eduScore;
@@ -3400,6 +3401,17 @@ export default function App() {
 
     const isStudentWinner = s.studentGoals > s.opponentGoals;
     const isTie = s.studentGoals === s.opponentGoals;
+
+    // إرسال النتيجة الفعلية إلى التطبيق الأم دون إضافة أي نقاط جديدة.
+    if (IS_EMBEDDED && EXTERNAL_STUDENT_ID && window.parent !== window) {
+      window.parent.postMessage({
+        type: 'LT_PENALTY_RESULT',
+        studentId: EXTERNAL_STUDENT_ID,
+        stageIndex: s.stage,
+        studentGoals: s.studentGoals,
+        opponentGoals: s.opponentGoals
+      }, window.location.origin);
+    }
 
     let resultMsg = '';
     if (isStudentWinner) {

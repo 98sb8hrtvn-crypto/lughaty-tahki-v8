@@ -140,10 +140,10 @@ export const TeacherMessagesManager: React.FC<TeacherMessagesManagerProps> = ({
       >
         <div>
           <h3 style={{ margin: 0, fontSize: 16, color: '#065f46', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span>📩</span> صندوق رسائل أولياء الأمور الخاص بالمعلم
+            <span>📩</span> صندوق رسائل الطلاب وأولياء الأمور
           </h3>
           <p style={{ margin: '3px 0 0', fontSize: 13, color: '#047857' }}>
-            استقبل استفسارات أولياء الأمور حول المستوى الدراسي، الواجبات، والمشكلات التقنية، ورد عليها مباشرة داخل التطبيق مع الحفاظ على الخصوصية التامة.
+            استقبل رسائل الطلاب وأولياء أمورهم، ورد عليها مباشرة داخل التطبيق مع الحفاظ على خصوصية كل رسالة.
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -324,7 +324,7 @@ export const TeacherMessagesManager: React.FC<TeacherMessagesManagerProps> = ({
                     <span style={{ fontSize: 20 }}>🎓</span>
                     <div>
                       <strong style={{ fontSize: 15, color: '#0f172a' }}>
-                        ولي أمر الطالب: {msg.studentName}
+                        مراسِل الطالب: {msg.studentName}
                       </strong>
                       <span style={{ color: '#64748b', fontSize: 12, marginRight: 6 }}>
                         (فصل {msg.studentCls})
@@ -358,7 +358,7 @@ export const TeacherMessagesManager: React.FC<TeacherMessagesManagerProps> = ({
                   </div>
                 </div>
 
-                {/* نص رسالة ولي الأمر */}
+                {/* نص الرسالة الواردة */}
                 <div
                   style={{
                     background: '#f8fafc',
@@ -434,7 +434,7 @@ export const TeacherMessagesManager: React.FC<TeacherMessagesManagerProps> = ({
                     className="btn coral"
                     style={{ padding: '4px 10px', fontSize: 11 }}
                     onClick={() => {
-                      if (confirm(`هل أنت متأكد من حذف رسالة ولي أمر الطالب ${msg.studentName}؟`)) {
+                      if (confirm(`هل أنت متأكد من حذف الرسالة الواردة من ${msg.studentName}؟`)) {
                         onDelete(msg.id);
                       }
                     }}
@@ -458,12 +458,12 @@ export const TeacherMessagesManager: React.FC<TeacherMessagesManagerProps> = ({
                     }}
                   >
                     <label style={{ fontSize: 13, fontWeight: 800, color: '#334155' }}>
-                      اكتب ردك التربوي المباشر لولي الأمر:
+                      اكتب ردك التربوي المباشر:
                     </label>
                     <textarea
                       value={draft || msg.replyText || ''}
                       onChange={e => setReplyDrafts(prev => ({ ...prev, [msg.id]: e.target.value }))}
-                      placeholder="أهلاً بك يا ولي الأمر الكريم، نشكر لك حرصك واهتمامك..."
+                      placeholder="أهلاً بك، نشكر لك تواصلك واهتمامك..."
                       rows={3}
                       style={{
                         width: '100%',
@@ -489,7 +489,7 @@ export const TeacherMessagesManager: React.FC<TeacherMessagesManagerProps> = ({
                         disabled={submittingReplyId === msg.id || !(draft || msg.replyText)?.trim()}
                         onClick={() => handleSendReply(msg.id)}
                       >
-                        {submittingReplyId === msg.id ? 'جاري الإرسال...' : 'إرسال الرد لولي الأمر فوراً ✅'}
+                        {submittingReplyId === msg.id ? 'جاري الإرسال...' : 'إرسال الرد فوراً ✅'}
                       </button>
                     </div>
                   </div>
