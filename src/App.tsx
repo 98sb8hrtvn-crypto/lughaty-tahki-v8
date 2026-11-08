@@ -1544,7 +1544,7 @@ export default function App() {
         const outcome: PenaltyResultEvent['outcome'] =
           studentGoals > opponentGoals ? 'فوز' : studentGoals === opponentGoals ? 'تعادل' : 'خسارة';
         const createdAt = Date.now();
-        const resultId = toSafeDocId(`penalty_${activeId}_stage_${stageIndex}_${createdAt}`);
+        const resultId = `pr_${createdAt}_${Math.random().toString(36).slice(2, 9)}`;
         const result: PenaltyResultEvent = {
           id: resultId,
           studentId: activeId,
@@ -3497,7 +3497,7 @@ export default function App() {
 
   const handleToggleFeedbackApproval = async (fb: FeedbackItem) => {
     if (!fb.id) return;
-    const nextStatus = fb.status === 'تمت القراءة' ? 'قيد المراجعة' : 'تمت القراءة';
+    const nextStatus = fb.replyText ? 'تم الرد' : fb.status === 'تمت القراءة' ? 'قيد المراجعة' : 'تمت القراءة';
     try {
       await setDoc(doc(db, 'feedback', fb.id), {
         role: fb.role,
