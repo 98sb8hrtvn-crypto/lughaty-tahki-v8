@@ -126,6 +126,7 @@ interface StudentProfile {
   raceCompletedAt?: number;
   finishLineReached?: boolean;
   completedQuestionIds?: string[];
+  penaltyAwardedQuestionIds?: string[];
   gameCooldowns?: Record<string, number>;
   registeredAt?: number;
   lastActiveAt?: number;
@@ -595,6 +596,7 @@ export default function App() {
 
   // Games state (متجددة بدون تكرار)
   const [gameView, setGameView] = useState<'menu' | 'detective' | 'order' | 'meaning' | 'speed'>('menu');
+  const [showPenaltyGame, setShowPenaltyGame] = useState(false);
   const [gameDetectiveList, setGameDetectiveList] = useState<DetectiveQuestion[]>([]);
   const [detIndex, setDetIndex] = useState(0);
   const [detScore, setDetScore] = useState(0);
@@ -1284,9 +1286,11 @@ export default function App() {
     });
   };
 
-  const addPoints = (ptsToAdd: number) => {
+  const addPoints = (ptsToAdd: number, uniqueKey?: string) => {
     if (!currentProfile || ptsToAdd <= 0) return;
     updateCurrentProfile(p => {
+      const alreadyAwarded = p.penaltyAwardedQuestionIds || [];
+      if (uniqueKey && alreadyAwarded.includes(uniqueKey)) return p;
       const nextBadges = [...p.badges];
       const newPoints = p.points + ptsToAdd;
 
@@ -1346,11 +1350,28 @@ export default function App() {
       return {
         ...p,
         points: newPoints,
-        badges: nextBadges
+        badges: nextBadges,
+        ...(uniqueKey ? { penaltyAwardedQuestionIds: [...alreadyAwarded, uniqueKey] } : {})
       };
     });
   };
 
+  useEffect(() => {
+    const handlePenaltyMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      const data = event.data;
+      if (!data || typeof data !== 'object') return;
+      if (data.type === 'LT_PENALTY_EXIT') {
+        setShowPenaltyGame(false);
+        return;
+      }
+      if (data.type === 'LT_PENALTY_AWARD' && typeof data.questionId === 'string' && data.studentId === activeId && activeId) {
+        addPoints(1, `penalty:${data.questionId}`);
+      }
+    };
+    window.addEventListener('message', handlePenaltyMessage);
+    return () => window.removeEventListener('message', handlePenaltyMessage);
+  }, [activeId, currentProfile]);
 
   const needProfile = (): boolean => {
     if (!currentProfile) {
@@ -1918,6 +1939,17 @@ export default function App() {
     if (speedTimerRef.current) clearInterval(speedTimerRef.current);
     setGameView('menu');
     setActiveModal('gamesModal');
+  };
+
+  const openPenaltyGame = () => {
+    if (!needProfile()) return;
+    const u1 = appSettings.unit1Open !== false || isTeacherAdmin;
+    const u2 = appSettings.unit2Open === true || isTeacherAdmin;
+    const u3 = appSettings.unit3Open === true || isTeacherAdmin;
+    try {
+      localStorage.setItem('pk_stage_locks', JSON.stringify([u1, u2, u3, u1 && u2, u1 && u2 && u3]));
+    } catch {}
+    setShowPenaltyGame(true);
   };
 
   // دالة استخراج الوحدات المفتوحة والمصرح بظهور أسئلتها في الألعاب
@@ -3894,7 +3926,7 @@ export default function App() {
                           setActiveModal('profileModal');
                         }}
                       >
-                        👤 تسجيل الدخول / إنشاء ملف
+                        👤 دخول الطالب
                       </button>
                       <button
                         className="btn light"
@@ -3917,6 +3949,42 @@ export default function App() {
                 </div>
               </section>
             )}
+
+            <section className="studentQuickNav" aria-label="القائمة الرئيسية للطالب">
+              <div className="studentQuickNavHeading">
+                <h2>ابدأ رحلتك في لغتي</h2>
+                <span>اختر وجهتك</span>
+              </div>
+              <div className="studentQuickNavGrid">
+                <button className="studentQuickTile race" onClick={() => document.getElementById('raceSection')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+                  <span className="studentQuickIcon">🏇</span><strong>مضمار السباق</strong>
+                </button>
+                <button className="studentQuickTile penalty" onClick={openPenaltyGame}>
+                  <span className="studentQuickIcon">⚽</span><strong>ركلات الترجيح</strong>
+                </button>
+                <button className="studentQuickTile daily" onClick={() => document.getElementById('dailyChallengeSection')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+                  <span className="studentQuickIcon">🎯</span><strong>تحدي اليوم</strong>
+                </button>
+                <button className="studentQuickTile lessons" onClick={() => document.getElementById('unitsSection')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+                  <span className="studentQuickIcon">📚</span><strong>الوحدات الدراسية</strong>
+                </button>
+                <button className="studentQuickTile games" onClick={openGames}>
+                  <span className="studentQuickIcon">🎮</span><strong>الألعاب اللغوية</strong>
+                </button>
+                <button className="studentQuickTile clinic" onClick={openMistakesClinic}>
+                  <span className="studentQuickIcon">🩺</span><strong>عيادة اللغة</strong>
+                </button>
+                <button className="studentQuickTile nafes" onClick={handleNafes}>
+                  <span className="studentQuickIcon">🏆</span><strong>مراحل نافس</strong>
+                </button>
+                <button className="studentQuickTile messages" onClick={() => setActiveModal('parentMessagesModal')}>
+                  <span className="studentQuickIcon">💬</span><strong>تواصل ولي الأمر</strong>
+                </button>
+                <button className="studentQuickTile profile" onClick={() => { setProfileMode('chooser'); setActiveModal('profileModal'); }}>
+                  <span className="studentQuickIcon">👤</span><strong>ملف الطالب</strong>
+                </button>
+              </div>
+            </section>
 
             {/* ================================================================= */}
             {/* DAILY CHALLENGE: AT THE TOP (سؤال تحدي اليوم في الأعلى استجابة لطلب المعلم) */}
@@ -4159,7 +4227,7 @@ export default function App() {
             {/* ================================================================= */}
             {/* HORSE RACE LEADERBOARD FOR TOP 10 STUDENTS & EXAM PROGRESS TABLE   */}
             {/* ================================================================= */}
-            <section className="raceSection">
+            <section id="raceSection" className="raceSection">
               <div
                 style={{
                   display: 'flex',
@@ -4802,7 +4870,7 @@ export default function App() {
               </section>
             )}
 
-            <section>
+            <section id="unitsSection">
               <div className="secTitle">
                 <h2>📖 الوحدات الدراسية</h2>
                 <span className="line" />
@@ -9920,6 +9988,16 @@ export default function App() {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {showPenaltyGame && (
+        <div role="dialog" aria-modal="true" aria-label="لعبة ركلات الترجيح" style={{ position: 'fixed', inset: 0, zIndex: 99999, background: '#071b20', display: 'flex', flexDirection: 'column', paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
+          <div style={{ height: 48, minHeight: 48, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 12px', background: '#0d6067', color: '#fff' }}>
+            <strong>⚽ لغتي تحكي — ركلات الترجيح</strong>
+            <button type="button" onClick={() => setShowPenaltyGame(false)} style={{ border: 0, borderRadius: 10, padding: '6px 14px', background: '#fff', color: '#0d6067', fontWeight: 900 }}>العودة للتطبيق ✕</button>
+          </div>
+          <iframe title="لعبة ركلات الترجيح" src={`/penalty.html?embedded=1&studentId=${encodeURIComponent(activeId || '')}&studentName=${encodeURIComponent((currentProfile?.name || 'طالب لغتي').trim().split(/\s+/).slice(0, (currentProfile?.name || '').trim().split(/\s+/)[0] === 'عبد' ? 2 : 1).join(' ') || 'طالب لغتي')}`} allow="autoplay; fullscreen" style={{ width: '100%', flex: 1, minHeight: 0, border: 0, background: '#f1f5ee' }} />
         </div>
       )}
 
