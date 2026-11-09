@@ -42,7 +42,7 @@ export function KnowledgeValleyJourney({studentId,studentName,canEnterUnit,onSta
  const startTrial=()=>{setQi(0);setAnswers([]);setChoice(null);setFeedback('');setView('trial')};
  const answer=(i:number)=>{if(choice!==null)return;setChoice(i);setFeedback(i===qs[qi][2]?'إجابة موفقة! أضاءت نجمة جديدة.':'ليست هذه المرة. '+qs[qi][3])};
  const next=()=>{const a=[...answers,choice??-1];setAnswers(a);setChoice(null);setFeedback('');if(qi===9){setView('game');setGameStep(0);setGameChoice(null)}else setQi(q=>q+1)};
- const tasks=[{q:'رتّب لتكوين جملة مفيدة',w:['العلم','ينير','العقول'],a:'العلم ينير العقول'},{q:'بالصدق ... الثقة',w:['تُبنى','تُهدم','تضيع'],a:'تُبنى'},{q:'اختر مرادف «مشرق»',w:['مضيء','مظلم','بعيد'],a:'مضيء'}];
+ const tasks=[{q:'رتّب لتكوين جملة مفيدة',w:['العلم ينير العقول','العقول ينير العلم','ينير العلم العقول'],a:'العلم ينير العقول'},{q:'بالصدق ... الثقة',w:['تُبنى','تُهدم','تضيع'],a:'تُبنى'},{q:'اختر مرادف «مشرق»',w:['مضيء','مظلم','بعيد'],a:'مضيء'}];
  const checkGame=()=>{if(gameChoice===null)return;if(tasks[gameStep].w[gameChoice]!==tasks[gameStep].a){setFeedback('حاول مرة أخرى؛ المفتاح الصحيح قريب!');return}setFeedback('أحسنت!');if(gameStep===2){save({started:true,trialDone:true,stars:Math.max(progress.stars||0,score)});setView('reward')}else{setGameStep(s=>s+1);setGameChoice(null)}};
  return <section className="kvj" dir="rtl" aria-label="مغامرة سر وادي المعرفة">
   <div className="kvj-world">
