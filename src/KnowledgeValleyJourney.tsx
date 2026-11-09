@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import './KnowledgeValleyJourney.css';
 
 type View = 'cinema'|'map'|'trial'|'game'|'reward';
@@ -35,7 +35,6 @@ export function KnowledgeValleyJourney({studentId,studentName,canEnterUnit,onSta
  const [gameStep,setGameStep]=useState(0),[gameChoice,setGameChoice]=useState<number|null>(null),[gameOrder,setGameOrder]=useState<string[]>([]),[earnedScore,setEarnedScore]=useState(0);
  const [progress,setProgress]=useState(()=>read(studentId));
  const first=studentName.trim().split(/\s+/)[0]||'أيها البطل';
- const score=useMemo(()=>answers.reduce((n,a,i)=>n+(a===qs[i][2]?1:0),0),[answers]);
  useEffect(()=>{const p=read(studentId);setProgress(p);setView(p.started?'map':'cinema');setScene(0);setQi(0);setAnswers([])},[studentId]);
  useEffect(()=>{const onQuizComplete=(event:Event)=>{const detail=(event as CustomEvent<{total:number;unit:number;score?:number}>).detail;if(detail?.total===10&&detail.unit>=1&&detail.unit<=3){setEarnedScore(Math.max(0,Math.min(10,Number(detail.score)||0)));setGameStep(0);setGameChoice(null);setGameOrder([]);setFeedback('');setView('game')}};window.addEventListener('lt:knowledge-valley:quiz-complete',onQuizComplete);return()=>window.removeEventListener('lt:knowledge-valley:quiz-complete',onQuizComplete)},[]);
  const save=(patch:Record<string,unknown>)=>{const p={...read(studentId),...patch};try{localStorage.setItem(storeKey+studentId,JSON.stringify(p))}catch{}setProgress(p)};
