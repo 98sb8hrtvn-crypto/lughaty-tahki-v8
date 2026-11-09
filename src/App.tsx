@@ -2118,6 +2118,9 @@ export default function App() {
       };
     });
     setQuizFinished(true);
+    if (tot === 10 && selectedUnit >= 1 && selectedUnit <= 3 && !quiz.isRemedial && !quiz.nafesStageId && quiz.nafesStageIdx === undefined) {
+      window.dispatchEvent(new CustomEvent('lt:knowledge-valley:quiz-complete', { detail: { title: quiz.title, unit: selectedUnit, score, total: tot } }));
+    }
     if (quiz.nafesStageId || quiz.nafesStageIdx !== undefined || score === tot) {
       fireCelebratoryFireworks();
     }
