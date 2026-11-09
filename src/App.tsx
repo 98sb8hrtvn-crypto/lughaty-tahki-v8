@@ -30,6 +30,7 @@ import {
 } from './gamesBank';
 import { SPLASH_SVG } from './splashImage';
 import { CoverSplash } from './coverSplash';
+import { KnowledgeValleyJourney } from './KnowledgeValleyJourney';
 import { fireCelebratoryFireworks } from './confetti';
 import {
   MOTIVATIONAL_TITLES,
@@ -2117,6 +2118,9 @@ export default function App() {
       };
     });
     setQuizFinished(true);
+    if (tot === 10 && selectedUnit >= 1 && selectedUnit <= 3 && !quiz.isRemedial && !quiz.nafesStageId && quiz.nafesStageIdx === undefined) {
+      window.dispatchEvent(new CustomEvent('lt:knowledge-valley:quiz-complete', { detail: { title: quiz.title, unit: selectedUnit, score, total: tot } }));
+    }
     if (quiz.nafesStageId || quiz.nafesStageIdx !== undefined || score === tot) {
       fireCelebratoryFireworks();
     }
@@ -4374,6 +4378,15 @@ export default function App() {
                   </div>
                 </div>
               </section>
+            )}
+
+            {currentProfile && (
+              <KnowledgeValleyJourney
+                studentId={activeId || ''}
+                studentName={currentProfile.name}
+                canEnterUnit={(unit) => isCurriculumUnitUnlocked(unit, appSettings, isTeacherAdmin).unlocked}
+                onStartUnit={handleUnit}
+              />
             )}
 
             <section className="studentQuickNav" aria-label="القائمة الرئيسية للطالب">
