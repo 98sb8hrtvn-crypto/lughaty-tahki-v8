@@ -3380,10 +3380,21 @@ export default function App() {
       }
     };
 
-    // إذا كان الصوت مكتومًا أو لم يبدأ، ننتظر اكتمال حركة الركلة فقط.
+    // المسار الطبيعي: إذا لم يبدأ أي تعليق صوتي، انتقل بعد اكتمال حركة الركلة.
     setTimeout(() => {
       if (!audioStateRef.current.isPlaying) doAdvance();
     }, 2700);
+
+    // حماية من تعليق iOS Safari أو تعثر ملف صوتي دون إطلاق حدث ended.
+    // لا يتدخل هذا المؤقت إذا انتهى الصوت وانتقلت اللعبة بصورة طبيعية.
+    setTimeout(() => {
+      if (advanced) return;
+      if (audioStateRef.current.isPlaying) {
+        console.warn('[Game Watchdog] Commentary playback stalled; recovering round progression.');
+        stopCommentary();
+      }
+      doAdvance();
+    }, 20000);
   };
 
   const finishStage = () => {
