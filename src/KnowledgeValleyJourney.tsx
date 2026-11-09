@@ -3,7 +3,8 @@ import './KnowledgeValleyJourney.css';
 
 type View = 'cinema'|'map'|'trial'|'game'|'reward';
 type Props = {studentId:string;studentName:string;canEnterUnit:(unit:number)=>boolean;onStartUnit:(unit:number)=>void};
-const gates = [
+type Gate = {id:number;title:string;sub:string;symbol:string;unit?:number;tone:string;desc:string};
+const gates:Gate[] = [
  {id:1,title:'واحة القيم',sub:'الفصل الأول',symbol:'✦',unit:1,tone:'emerald',desc:'افتح كنوز القيم الإسلامية واجعل الكلمة الطيبة دليلك.'},
  {id:2,title:'مدينة الأعلام',sub:'الفصل الثاني',symbol:'♜',unit:2,tone:'violet',desc:'تتبّع آثار العظماء واكتشف قوة المعرفة.'},
  {id:3,title:'حصن الوطن',sub:'الفصل الثالث',symbol:'⌑',unit:3,tone:'gold',desc:'ارفع راية الفخر واكتشف أسرار لغتنا ووطننا.'},
