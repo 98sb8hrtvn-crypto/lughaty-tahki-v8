@@ -41,7 +41,7 @@ export function KnowledgeValleyJourney({studentId,studentName,canEnterUnit,onSta
  const begin=()=>{save({started:true});setView('map')};
  const startTrial=()=>{setQi(0);setAnswers([]);setChoice(null);setFeedback('');setGameOrder([]);setView('trial')};
  const answer=(i:number)=>{if(choice!==null)return;setChoice(i);setFeedback(i===qs[qi][2]?'إجابة موفقة! أضاءت نجمة جديدة.':'ليست هذه المرة. '+qs[qi][3])};
- const next=()=>{const a=[...answers,choice??-1];setAnswers(a);setChoice(null);setFeedback('');if(qi===9){setView('game');setGameStep(0);setGameChoice(null)}else setQi(q=>q+1)};
+ const next=()=>{const a=[...answers,choice??-1];setAnswers(a);setChoice(null);setFeedback('');if(qi===9){setView('game');setGameStep(0);setGameChoice(null);setGameOrder([])}else setQi(q=>q+1)};
  const tasks=[{q:'رتّب الكلمات لتبني الجملة الصحيحة',w:['ينير','العلم','العقول'],a:'العلم ينير العقول'},{q:'أكمل العبارة: بالصدق ... الثقة',w:['تُبنى','تُهدم','تضيع'],a:'تُبنى'},{q:'اختر مرادف كلمة «مشرق»',w:['مضيء','مظلم','بعيد'],a:'مضيء'}];
  const checkGame=()=>{const correct=gameStep===0?gameOrder.join(' ')===tasks[0].a:gameChoice!==null&&tasks[gameStep].w[gameChoice]===tasks[gameStep].a;if(!correct){setFeedback('حاول مرة أخرى؛ المفتاح الصحيح قريب!');return}setFeedback('أحسنت!');if(gameStep===2){save({started:true,trialDone:true,stars:Math.max(progress.stars||0,score)});setView('reward')}else{setGameStep(s=>s+1);setGameChoice(null);setGameOrder([]);setFeedback('')}};
  return <section className="kvj" dir="rtl" aria-label="مغامرة سر وادي المعرفة">
