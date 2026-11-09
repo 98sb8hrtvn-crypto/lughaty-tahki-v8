@@ -1,0 +1,81 @@
+.kvj {
+  --kvj-ink: #173b3a;
+  --kvj-muted: #617b78;
+  --kvj-gold: #e9bd68;
+  margin: 18px 0 22px;
+  overflow: hidden;
+  border: 1px solid #c8d9cf;
+  border-radius: 24px;
+  background: #fbfdf9;
+  box-shadow: 0 12px 34px rgba(24, 61, 54, .10);
+  color: var(--kvj-ink);
+}
+.kvj * { box-sizing: border-box; }
+.kvj-sky {
+  min-height: 218px;
+  position: relative;
+  overflow: hidden;
+  padding: 24px 26px 0;
+  color: #fff;
+  background: radial-gradient(circle at 78% 18%, rgba(246,205,126,.22), transparent 23%), linear-gradient(120deg, #102f3c 0%, #18515a 52%, #47766a 100%);
+}
+.kvj-stars { position: absolute; inset: 12px 18px auto; color: rgba(255,255,255,.55); font-size: 17px; letter-spacing: 8px; }
+.kvj-heading { position: relative; z-index: 2; max-width: 560px; }
+.kvj-eyebrow { display: inline-block; color: #f3d99f; font-size: 12px; font-weight: 900; letter-spacing: .3px; }
+.kvj-heading h2 { margin: 7px 0 4px; color: #fff; font-size: clamp(25px, 4vw, 36px); font-weight: 950; }
+.kvj-heading p { margin: 0; color: #e2eee8; font-size: 14px; }
+.kvj-landscape { position: relative; height: 96px; margin: 0 -26px; overflow: hidden; }
+.kvj-moon { position: absolute; left: 12%; top: -14px; color: #f5d895; font-size: 56px; }
+.kvj-mountain { position: absolute; bottom: -56px; width: 62%; height: 150px; border-radius: 48% 52% 0 0; transform: rotate(-8deg); }
+.kvj-mountain-back { left: 35%; background: linear-gradient(145deg, #527e76, #234c50); }
+.kvj-mountain-front { left: -8%; bottom: -84px; width: 75%; background: linear-gradient(145deg, #77977a, #315c54); transform: rotate(8deg); }
+.kvj-tower { position: absolute; right: 20%; bottom: 12px; z-index: 2; font-size: 42px; filter: drop-shadow(0 5px 5px rgba(0,0,0,.25)); }
+.kvj-falcon { position: absolute; left: 22%; top: 18px; z-index: 3; font-size: 27px; filter: drop-shadow(0 3px 3px rgba(0,0,0,.2)); }
+.kvj-path { position: absolute; z-index: 3; right: 36%; bottom: -25px; width: 80px; height: 105px; border: 5px dashed rgba(244,216,157,.75); border-bottom: 0; border-left: 0; border-radius: 50%; transform: rotate(28deg); }
+.kvj-story, .kvj-map { padding: 22px 24px 24px; }
+.kvj-story-mark { display: flex; align-items: center; gap: 8px; color: #9a6a25; font-size: 12px; font-weight: 900; }
+.kvj-story-mark span:first-child { font-size: 21px; }
+.kvj-story h3, .kvj-map-heading h3 { margin: 9px 0 10px; color: #173f3c; font-size: 20px; font-weight: 950; line-height: 1.5; }
+.kvj-story > p { margin: 9px 0; color: #4e6965; font-size: 14px; line-height: 1.95; }
+.kvj-mentor-note { display: flex; align-items: center; gap: 12px; margin: 17px 0; padding: 12px 14px; border: 1px solid #e8d5a8; border-radius: 15px; background: linear-gradient(110deg, #fff9e9, #fffdf7); }
+.kvj-mentor-icon { display: grid; place-items: center; width: 44px; height: 44px; flex: 0 0 44px; border-radius: 14px; background: #f3e4bd; font-size: 24px; }
+.kvj-mentor-note strong, .kvj-mentor-note span { display: block; }
+.kvj-mentor-note strong { margin-bottom: 3px; color: #76521e; font-size: 13px; }
+.kvj-mentor-note span { color: #786d57; font-size: 12px; line-height: 1.7; }
+.kvj-primary { display: flex; justify-content: center; align-items: center; gap: 16px; width: 100%; min-height: 50px; padding: 10px 18px; border: 0; border-radius: 14px; background: linear-gradient(100deg, #d9a94f, #f0ce82); color: #253b35; font: inherit; font-weight: 950; cursor: pointer; box-shadow: 0 5px 14px rgba(179,130,48,.18); }
+.kvj-primary:active, .kvj-gate-action:not(:disabled):active { transform: translateY(1px); }
+.kvj-safety-note { display: block; margin-top: 9px; color: #7c8e87; font-size: 11px; text-align: center; }
+.kvj-map-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.kvj-map-heading h3 { margin: 4px 0 0; }
+.kvj-story-link { padding: 7px 11px; border: 1px solid #d5e1d9; border-radius: 10px; background: #fff; color: #42675b; font: inherit; font-size: 12px; font-weight: 800; cursor: pointer; }
+.kvj-companion { display: flex; align-items: center; gap: 10px; margin: 15px 0; padding: 10px 13px; border-radius: 13px; background: #edf5ef; }
+.kvj-companion-bird { font-size: 26px; }
+.kvj-companion p { margin: 0; color: #526e61; font-size: 12px; line-height: 1.7; }
+.kvj-gates { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.kvj-gate { display: flex; align-items: center; gap: 11px; min-width: 0; padding: 12px; border: 1px solid #dbe6dd; border-radius: 15px; background: #fff; }
+.kvj-gate.is-open { border-color: #b9d9c5; background: linear-gradient(130deg, #fff, #f1faf3); }
+.kvj-gate.is-closed { border-color: #e7d9bd; background: #fffdf8; }
+.kvj-gate.is-mystery { opacity: .82; background: #f4f6f3; }
+.kvj-gate-symbol { display: grid; place-items: center; width: 43px; height: 43px; flex: 0 0 43px; border-radius: 13px; background: #eaf1e9; font-size: 23px; }
+.kvj-gate-copy { min-width: 0; flex: 1; }
+.kvj-gate-step { color: #9b7a42; font-size: 10px; font-weight: 900; }
+.kvj-gate-copy h4 { margin: 2px 0 3px; color: #23463e; font-size: 13px; font-weight: 950; }
+.kvj-gate-copy p { margin: 0; color: #71817a; font-size: 10px; line-height: 1.55; }
+.kvj-gate-action { display: block; margin-top: 8px; padding: 6px 8px; border: 0; border-radius: 8px; background: #1c6654; color: #fff; font: inherit; font-size: 10px; font-weight: 900; cursor: pointer; }
+.kvj-gate-action:disabled { background: #e9e5dc; color: #8b8578; cursor: not-allowed; }
+.kvj-gate-sealed { display: block; margin-top: 8px; color: #818b84; font-size: 10px; font-weight: 800; }
+.kvj-rule { display: flex; align-items: flex-start; gap: 9px; margin-top: 14px; padding: 11px 13px; border-right: 3px solid #d7ad5e; border-radius: 10px; background: #fff8e9; }
+.kvj-rule > span { font-size: 18px; }
+.kvj-rule p { margin: 0; color: #746342; font-size: 11px; line-height: 1.8; }
+@media (max-width: 640px) {
+  .kvj { border-radius: 18px; margin: 14px 0 18px; }
+  .kvj-sky { min-height: 194px; padding: 22px 17px 0; }
+  .kvj-landscape { margin: 0 -17px; height: 83px; }
+  .kvj-tower { right: 16%; bottom: 7px; }
+  .kvj-falcon { left: 15%; }
+  .kvj-story, .kvj-map { padding: 18px 15px 19px; }
+  .kvj-gates { grid-template-columns: 1fr; }
+  .kvj-gate { align-items: flex-start; }
+  .kvj-gate-action, .kvj-gate-sealed { min-width: 110px; align-self: center; text-align: center; }
+  .kvj-story h3, .kvj-map-heading h3 { font-size: 17px; }
+}

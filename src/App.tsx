@@ -30,6 +30,7 @@ import {
 } from './gamesBank';
 import { SPLASH_SVG } from './splashImage';
 import { CoverSplash } from './coverSplash';
+import { KnowledgeValleyJourney } from './KnowledgeValleyJourney';
 import { fireCelebratoryFireworks } from './confetti';
 import {
   MOTIVATIONAL_TITLES,
@@ -4374,6 +4375,15 @@ export default function App() {
                   </div>
                 </div>
               </section>
+            )}
+
+            {currentProfile && (
+              <KnowledgeValleyJourney
+                studentId={activeId || ''}
+                studentName={currentProfile.name}
+                canEnterUnit={(unit) => isCurriculumUnitUnlocked(unit, appSettings, isTeacherAdmin).unlocked}
+                onStartUnit={handleUnit}
+              />
             )}
 
             <section className="studentQuickNav" aria-label="القائمة الرئيسية للطالب">
