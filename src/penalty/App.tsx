@@ -457,6 +457,7 @@ const esc = (v: string | number) =>
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const qRef = useRef<HTMLDivElement | null>(null);
+  const kickWatchdogRef = useRef<number | null>(null);
 
   // Anti-Repetition Tracking Engine:
   // 1. Tracks clips played in current session per category
@@ -489,7 +490,8 @@ export default function App() {
     waitingTimer: number | null;
     roundAnswered: boolean;
     currentRoundId: number;
-    pendingOnEnded: (() => void) | null;
+    playbackGeneration: number;
+    currentResolver: (() => void) | null;
     currentAudioPromise: Promise<void> | null;
     waitingSequenceIdx: number;
     lastRequestTime: number;
@@ -501,7 +503,8 @@ export default function App() {
     waitingTimer: null,
     roundAnswered: false,
     currentRoundId: 0,
-    pendingOnEnded: null,
+    playbackGeneration: 0,
+    currentResolver: null,
     currentAudioPromise: null,
     waitingSequenceIdx: 0,
     lastRequestTime: 0,
@@ -1186,6 +1189,7 @@ export default function App() {
   // 2. Commentary Audio Stopper & Timer Clearer (Stops ONLY commentary, leaves stadium crowd intact)
   const stopCommentary = () => {
     const s = gameStateRef.current;
+    audioStateRef.current.playbackGeneration++;
     if (s.currentCommentarySource) {
       try {
         s.currentCommentarySource.onended = null;
@@ -1207,8 +1211,12 @@ export default function App() {
     audioStateRef.current.isPlaying = false;
     audioStateRef.current.activeClip = null;
     audioStateRef.current.activeCategory = null;
-    audioStateRef.current.pendingOnEnded = null;
+    const resolver = audioStateRef.current.currentResolver;
+    audioStateRef.current.currentResolver = null;
     audioStateRef.current.currentAudioPromise = null;
+    if (resolver) {
+      try { resolver(); } catch {}
+    }
   };
 
   // 3. Stop All Sound System (Used only on mute or reset to menu)
@@ -1236,7 +1244,7 @@ export default function App() {
     clipKey: string,
     onClipEnded?: () => void,
     eventId?: string,
-    priority: 'normal' | 'waiting' | 'answer' = 'normal'
+    priority: 'normal' | 'waiting' | 'answer' | 'outcome' = 'normal'
   ): Promise<void> => {
     const s = gameStateRef.current;
     if (s.muted) {
@@ -1276,27 +1284,17 @@ export default function App() {
     }
     audioStateRef.current.lastRequestTime = now;
 
-    // RULE 4: Strict Event Priority (Student Answer > Waiting Commentary)
+    // RULE 4: strict priority. A student answer replaces the currently playing commentary immediately.
     if (audioStateRef.current.isPlaying) {
       if (priority === 'waiting') {
-        // Requirement 2: If audio manager is busy, skip waiting commentary
         console.log('[Central Audio Manager] Audio manager busy; waiting commentary skipped:', clipKey);
         if (onClipEnded) onClipEnded();
         return;
       }
-
-      // Requirement 1 & 3: If a waiting commentary is playing, stop it immediately!
-      // Do NOT wait for its ended event; student answer has strict higher priority.
-      if (audioStateRef.current.activeCategory === 'waiting' || audioStateRef.current.activeClip?.includes('prep')) {
-        console.log('[Central Audio Manager] Student answered: stopping waiting commentary immediately:', clipKey);
+      if (priority === 'answer' || priority === 'outcome') {
         stopCommentary();
-      } else {
-        // For other sequential commentary (e.g. outcome after shot), await current finish
-        if (audioStateRef.current.currentAudioPromise) {
-          try {
-            await audioStateRef.current.currentAudioPromise;
-          } catch {}
-        }
+      } else if (audioStateRef.current.currentAudioPromise) {
+        try { await audioStateRef.current.currentAudioPromise; } catch {}
       }
     }
 
@@ -1305,10 +1303,10 @@ export default function App() {
       return;
     }
 
+    const playbackToken = ++audioStateRef.current.playbackGeneration;
     audioStateRef.current.isPlaying = true;
     audioStateRef.current.activeClip = clipKey;
     audioStateRef.current.activeCategory = priority;
-    audioStateRef.current.pendingOnEnded = onClipEnded || null;
 
     const ctx = getAudioContext();
     const master = masterGainRef.current;
@@ -1316,29 +1314,83 @@ export default function App() {
     // Fetch / decode buffer on demand if not cached
     let buffer: AudioBuffer | null = s.audioBuffers[clipKey] || null;
     if (!buffer && ctx && ctx.state !== 'closed') {
-      buffer = await loadSingleClipBuffer(clipKey);
+      // Do not let a slow fetch/decode hold the commentary channel indefinitely.
+      // If Web Audio is not ready quickly, fall back to the original MP3 via HTMLAudio.
+      let bufferLoadTimer: number | null = null;
+      try {
+        buffer = await Promise.race([
+          loadSingleClipBuffer(clipKey),
+          new Promise<AudioBuffer | null>((resolve) => {
+            bufferLoadTimer = window.setTimeout(() => resolve(null), 1800);
+          })
+        ]);
+      } finally {
+        if (bufferLoadTimer !== null) window.clearTimeout(bufferLoadTimer);
+      }
     }
+    // The clip may have been cancelled while its file was loading (common on iOS).
+    if (playbackToken !== audioStateRef.current.playbackGeneration) return;
 
     const playPromise = new Promise<void>((resolve) => {
       let resolved = false;
+      let safetyTimer: number | null = null;
       const done = () => {
         if (!resolved) {
           resolved = true;
+          if (safetyTimer !== null) {
+            window.clearTimeout(safetyTimer);
+            safetyTimer = null;
+          }
+          if (playbackToken !== audioStateRef.current.playbackGeneration) {
+            resolve();
+            return;
+          }
+          audioStateRef.current.currentResolver = null;
           audioStateRef.current.isPlaying = false;
           audioStateRef.current.activeClip = null;
           audioStateRef.current.activeCategory = null;
           audioStateRef.current.currentAudioPromise = null;
-          const callback = audioStateRef.current.pendingOnEnded;
-          audioStateRef.current.pendingOnEnded = null;
-          if (callback) {
-            try { callback(); } catch {}
+          // The completion callback belongs to this playback only. Never read a
+          // shared callback slot: a stopped clip must not advance a later round.
+          if (onClipEnded) {
+            try { onClipEnded(); } catch {}
           }
           resolve();
         }
       };
 
-      // Primary: Web Audio API playback (zero latency when buffer is decoded)
-      if (ctx && master && buffer && ctx.state === 'running') {
+      audioStateRef.current.currentResolver = done;
+      // A missing ended/error event must not leave the central audio manager busy forever.
+      const safetyDelay = buffer ? Math.max(6000, Math.ceil(buffer.duration * 1000) + 3000) : 15000;
+      safetyTimer = window.setTimeout(() => {
+        console.warn('[Central Audio Manager] Playback safety timeout:', clipKey);
+        // If the browser omitted its ended event, stop the actual media source too
+        // before releasing the channel; otherwise the next clip could overlap it.
+        if (playbackToken === audioStateRef.current.playbackGeneration) {
+          if (s.currentCommentarySource) {
+            try {
+              s.currentCommentarySource.onended = null;
+              s.currentCommentarySource.stop();
+              s.currentCommentarySource.disconnect();
+            } catch {}
+            s.currentCommentarySource = null;
+          }
+          if (s.currentFallbackAudio) {
+            try {
+              s.currentFallbackAudio.pause();
+              s.currentFallbackAudio.currentTime = 0;
+            } catch {}
+            s.currentFallbackAudio = null;
+          }
+        }
+        done();
+      }, safetyDelay);
+
+      // Primary: Web Audio API playback (zero latency when buffer is decoded; native Safari auto-resume)
+      if (ctx && master && buffer && ctx.state !== 'closed') {
+        if (ctx.state === 'suspended') {
+          ctx.resume().catch(() => {});
+        }
         try {
           const source = ctx.createBufferSource();
           source.buffer = buffer;
@@ -1459,12 +1511,26 @@ export default function App() {
   };
 
   // 6. Audio-only commentary playback with event deduplication
-  const say = (_text: string, clipKey?: string | null, _personaTitle?: string, _icon?: string, eventId?: string) => {
-    if (gameStateRef.current.muted || !clipKey) return;
-    if (introPlayingRef.current || gameStartStateRef.current === 'introPlaying') {
+  const say = (
+    _text: string,
+    clipKey?: string | null,
+    _personaTitle?: string,
+    _icon?: string,
+    eventId?: string,
+    onEnded?: () => void,
+    priority: 'normal' | 'waiting' | 'answer' | 'outcome' = 'normal'
+  ) => {
+    if (gameStateRef.current.muted || !clipKey) {
+      if (onEnded) onEnded();
       return;
     }
-    playCommentary(clipKey, undefined, eventId).catch(() => {});
+    if (introPlayingRef.current || gameStartStateRef.current === 'introPlaying') {
+      if (onEnded) onEnded();
+      return;
+    }
+    playCommentary(clipKey, onEnded, eventId, priority).catch(() => {
+      if (onEnded) onEnded();
+    });
   };
 
   // Canvas Drawing & Physics Setup
@@ -3055,6 +3121,16 @@ export default function App() {
     const s = gameStateRef.current;
     if (ok) s.cg = true;
     s.busy = true;
+    // Recover if a mobile browser misses a canvas animation completion.
+    if (kickWatchdogRef.current !== null) window.clearTimeout(kickWatchdogRef.current);
+    kickWatchdogRef.current = window.setTimeout(() => {
+      const current = gameStateRef.current;
+      if (current.busy && !current.evaluated && current.seq) {
+        console.warn('[Game Watchdog] Completing a stalled kick to keep the round moving.');
+        finish(current.seq.mode);
+      }
+      kickWatchdogRef.current = null;
+    }, 7000);
 
     const isStriker = s.round % 2 === 0;
 
@@ -3198,7 +3274,53 @@ export default function App() {
 
     const isStriker = s.round % 2 === 0;
     const isGoal = isGoalMode(mode);
+    if (kickWatchdogRef.current !== null) {
+      window.clearTimeout(kickWatchdogRef.current);
+      kickWatchdogRef.current = null;
+    }
+
     const outcomeEventId = `stage-${s.stage}-round-${s.round}-outcome`;
+    const isLastKick = s.round >= 9;
+    const finishStartTime = performance.now();
+    let advanced = false;
+    let advanceTimer: number | null = null;
+
+    const doAdvance = () => {
+      if (advanced) return;
+      advanced = true;
+      if (advanceTimer !== null) {
+        window.clearTimeout(advanceTimer);
+        advanceTimer = null;
+      }
+      window.clearTimeout(fallbackTimer);
+      clearWaitingAndCoachTimers();
+      if (isLastKick) {
+        finishStage();
+      } else {
+        s.round++;
+        resetRound();
+        s.busy = false;
+        s.evaluated = false;
+        s.answeredThisRound = false;
+        drawDots();
+        nextQ();
+      }
+    };
+
+    const onOutcomeEnded = () => {
+      const elapsed = performance.now() - finishStartTime;
+      const minVisualTime = 2600;
+      if (elapsed < minVisualTime) {
+        if (advanceTimer === null) {
+          advanceTimer = window.setTimeout(doAdvance, minVisualTime - elapsed);
+        }
+      } else {
+        doAdvance();
+      }
+    };
+
+    // Let the original result commentary finish, but never leave the student stuck.
+    const fallbackTimer = window.setTimeout(doAdvance, 6500);
 
     if (isStriker) {
       // Student is Striker
@@ -3210,7 +3332,7 @@ export default function App() {
         if (s.streak >= 3) s.starsT = performance.now();
         sfGoal();
         const clip = selectCommentary('goal', ['mp3_goal_yarabbah', 'mp3_goal_beautiful', 'mp3_goal_decisive_moment']);
-        say(clip.text, clip.id, clip.personaTitle, clip.icon, outcomeEventId);
+        say(clip.text, clip.id, clip.personaTitle, clip.icon, outcomeEventId, onOutcomeEnded, 'outcome');
         showStatusMsg('🎉 قوووووووول! هدف رائع في الشباك!');
       } else {
         s.res[s.round] = 0;
@@ -3234,7 +3356,7 @@ export default function App() {
             'mp3_save_did_not_move'
           ]);
           sfMiss('save');
-          say(clip.text, clip.id, clip.personaTitle, clip.icon, outcomeEventId);
+          say(clip.text, clip.id, clip.personaTitle, clip.icon, outcomeEventId, onOutcomeEnded, 'outcome');
           showStatusMsg('🧤 تصدى حارس المنافس للكرة!');
         } else if (mode === 'post_out') {
           const clip = selectCommentary('post', [
@@ -3248,7 +3370,7 @@ export default function App() {
           sfPost();
           setTimeout(() => {
             sfMiss('post');
-            say(clip.text, clip.id, clip.personaTitle, clip.icon, outcomeEventId);
+            say(clip.text, clip.id, clip.personaTitle, clip.icon, outcomeEventId, onOutcomeEnded, 'outcome');
           }, 180);
           showStatusMsg('🥅 ارتطمت بالقائم وخرجت!');
         } else {
@@ -3262,7 +3384,7 @@ export default function App() {
             'mp3_miss_rethink'
           ];
           const clip = selectCommentary('miss', strikerMissPool);
-          say(clip.text, clip.id, clip.personaTitle, clip.icon, outcomeEventId);
+          say(clip.text, clip.id, clip.personaTitle, clip.icon, outcomeEventId, onOutcomeEnded, 'outcome');
           showStatusMsg('💨 التسديدة تخرج بعيدًا عن المرمى!');
 
           // Requirement 7: حركة علب الماء والعصير عند ضياع الكرة باحتمال 40%
@@ -3279,7 +3401,7 @@ export default function App() {
         s.wrong++;
         sfGoal();
         const clip = selectCommentary('goal', ['mp3_goal_yarabbah', 'mp3_goal_beautiful', 'mp3_goal_decisive_moment']);
-        say(clip.text, clip.id, clip.personaTitle, clip.icon, outcomeEventId);
+        say(clip.text, clip.id, clip.personaTitle, clip.icon, outcomeEventId, onOutcomeEnded, 'outcome');
         showStatusMsg('⚽ هدف للمنافس في شباكك!');
       } else {
         s.studentSaves++;
@@ -3299,7 +3421,7 @@ export default function App() {
             'mp3_save_did_not_move'
           ]);
           sfMiss('save');
-          say(clip.text, clip.id, clip.personaTitle, clip.icon, outcomeEventId);
+          say(clip.text, clip.id, clip.personaTitle, clip.icon, outcomeEventId, onOutcomeEnded, 'outcome');
           showStatusMsg('🧤 براعة وقفاز ذهبي! تصديت لتسديدة المنافس بنجاح!');
         } else if (mode === 'post_out') {
           const clip = selectCommentary('post', [
@@ -3313,7 +3435,7 @@ export default function App() {
           sfPost();
           setTimeout(() => {
             sfMiss('post');
-            say(clip.text, clip.id, clip.personaTitle, clip.icon, outcomeEventId);
+            say(clip.text, clip.id, clip.personaTitle, clip.icon, outcomeEventId, onOutcomeEnded, 'outcome');
           }, 180);
           showStatusMsg('🥅 تسديدة المنافس اصطدمت بالقائم وخرجت!');
         } else {
@@ -3327,7 +3449,7 @@ export default function App() {
           ];
           const clip = selectCommentary('miss', oppMissPool);
           sfMiss('wide');
-          say(clip.text, clip.id, clip.personaTitle, clip.icon, outcomeEventId);
+          say(clip.text, clip.id, clip.personaTitle, clip.icon, outcomeEventId, onOutcomeEnded, 'outcome');
           showStatusMsg('💨 تسديدة المنافس خرجت بعيدًا!');
         }
       }
@@ -3345,56 +3467,10 @@ export default function App() {
       });
     }
 
-    // Requirement 9: الانتقال التلقائي بنسبة 100% بين الركلات وإلغاء زر «المحاولة التالية» تماماً
-    // - لا تبدأ الركلة التالية ولا يظهر السؤال التالي أثناء تحدث المعلق إطلاقاً
-    // - اكتمال التعليق الصوتي لنتيجة الركلة + اكتمال حركة اللاعب والكرة
-    // - مهلة أمان قصوى احتياطية (Fallback timeout)
-    const isLastKick = s.round >= 9;
-    const finishStartTime = performance.now();
-    let advanced = false;
-
-    const doAdvance = () => {
-      if (advanced) return;
-      advanced = true;
-      clearWaitingAndCoachTimers();
-      if (isLastKick) {
-        finishStage();
-      } else {
-        s.round++;
-        resetRound();
-        s.busy = false;
-        s.evaluated = false;
-        s.answeredThisRound = false;
-        drawDots();
-        nextQ();
-      }
-    };
-
-    // لا يوجد مؤقت يقطع التعليق: الانتقال بعد انتهاء الصوت فعليًا واكتمال حركة الركلة.
-    audioStateRef.current.pendingOnEnded = () => {
-      const elapsed = performance.now() - finishStartTime;
-      if (elapsed < 2600) {
-        setTimeout(doAdvance, 2600 - elapsed);
-      } else {
-        doAdvance();
-      }
-    };
-
-    // المسار الطبيعي: إذا لم يبدأ أي تعليق صوتي، انتقل بعد اكتمال حركة الركلة.
+    // If no outcome clip could start, keep the visual round transition moving.
     setTimeout(() => {
-      if (!audioStateRef.current.isPlaying) doAdvance();
-    }, 2700);
-
-    // حماية من تعليق iOS Safari أو تعثر ملف صوتي دون إطلاق حدث ended.
-    // لا يتدخل هذا المؤقت إذا انتهى الصوت وانتقلت اللعبة بصورة طبيعية.
-    setTimeout(() => {
-      if (advanced) return;
-      if (audioStateRef.current.isPlaying) {
-        console.warn('[Game Watchdog] Commentary playback stalled; recovering round progression.');
-        stopCommentary();
-      }
-      doAdvance();
-    }, 20000);
+      if (!audioStateRef.current.isPlaying) onOutcomeEnded();
+    }, 2600);
   };
 
   const finishStage = () => {
@@ -4120,13 +4196,22 @@ export default function App() {
     const ctx = cv.getContext('2d');
     if (!ctx) return;
 
+    let lastFrameErrorAt = 0;
     const loop = (now: number) => {
+      // Schedule the next frame first so a transient error cannot stop animation permanently.
+      animId = requestAnimationFrame(loop);
       const dt = Math.min(0.05, (now - (lastTime || now)) / 1000);
       lastTime = now;
-      update(now);
-      tick();
-      draw(ctx, dt, now);
-      animId = requestAnimationFrame(loop);
+      try {
+        update(now);
+        tick();
+        draw(ctx, dt, now);
+      } catch (error) {
+        if (now - lastFrameErrorAt > 3000) {
+          console.error('[Game Loop] Recovered from a frame error; animation will continue.', error);
+          lastFrameErrorAt = now;
+        }
+      }
     };
 
     animId = requestAnimationFrame(loop);
